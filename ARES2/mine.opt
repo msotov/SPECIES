@@ -1,0 +1,11 @@
+specfits='HIP14086_uves_res.fits'
+readlinedat='linelist.dat'
+fileout='HIP14086_uves.ares'
+lambdai=3600.
+lambdaf=9000.
+smoothder=4
+space=3.0
+rejt=0.995006
+lineresol=0.1
+miniline=2
+plots_flag=0

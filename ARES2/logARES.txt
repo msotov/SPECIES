@@ -1,0 +1,15 @@
+Input File ARES...
+Input Parameters:
+
+specfits: HIP14086_uves_res.fits
+readlinedat: linelist.dat
+fileout: HIP14086_uves.ares
+lambdai: 3600.0
+lambdaf: 9000.0
+smoothder: 4.0
+space: 3.00 
+rejt: 0.995006
+
+lineresol: 0.100
+miniline: 2.0
+plots_flag: 0
