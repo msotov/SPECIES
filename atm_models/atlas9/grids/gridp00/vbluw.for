@@ -1,0 +1,300 @@
+      PROGRAM VBLUW
+      IMPLICIT REAL*4 (A-Z)
+      DIMENSION HLAM(1221),WAVE(1221),HNU(1221),HNUCONT(1221)                                            
+      DIMENSION AMAGI(13,1221),TRANSI(13,1221),EBVI(13),AMAG(1221)
+      CHARACTER*80 TITLE
+      INTEGER I,NV,NB,NL,NU,NW,MODEL,MODEL1,MODEL2,NSKIP,NMODEL,ITEFF
+      INTEGER NNU,IRED
+      DIMENSION A(8)
+      DIMENSION F(2000)
+      DIMENSION VFILT(61),BFILT(61),LFILT(51),UFILT(57),WFILT(33)
+      DIMENSION VWAVE(61),BWAVE(61),LWAVE(51),UWAVE(57),WWAVE(33)
+      DIMENSION WAVEV(1770),WAVEB(990),WAVEL(540),WAVEU(560),WAVEW(320)
+      DIMENSION SV(1770),SB(990),SL(540),SU(560),SW(320)
+C      DATA EBVI/0.,.1,.2,.3,.4,.5,.6,.7,.8,.9,1./
+      DATA EBVI/0.,.1,.2,.3,.4,.5,.6,.8,1.,2.,3.,4.,5./
+      DATA NV,NB,NL,NU,NW/1770,990,540,560,320/
+      DATA VFILT/
+     1 .000, .000, .001, .009, .024, .045, .076, .115, .161, .209, .264,
+     2 .320, .380, .441, .504, .568, .634, .699, .759, .811, .860, .902,
+     3 .938, .967, .986, .998,1.000, .992, .975, .955, .930, .904, .876,
+     4 .847, .812, .779, .746, .709, .671, .633, .594, .554, .514, .451,
+     5 .388, .321, .258, .201, .152, .113, .084, .058, .039, .029, .022,
+     6 .016, .012, .008, .004, .000, .000/                                                          
+      DATA BFILT/
+     1 .000, .000, .001, .004, .008, .014, .023, .035, .051, .071, .092,
+     2 .112, .136, .161, .186, .228, .273, .320, .368, .419, .471, .523,
+     3 .575, .627, .682, .733, .781, .824, .863, .898, .929, .954, .976,
+     4 .990, .998, .997, .985, .960, .929, .893, .850, .800, .744, .683,
+     5 .621, .562, .504, .445, .390, .335, .282, .230, .181, .138, .101,
+     6 .063, .034, .015, .003, .000, .000/
+      DATA LFILT/
+     1 .000, .000, .003, .006, .011, .020, .035, .064, .108, .157, .215,
+     2 .274, .336, .401, .468, .538, .609, .684, .759, .832, .900, .945,
+     3 .974, .990, .999, .998, .985, .961, .929, .891, .855, .815, .775,
+     4 .727, .676, .621, .562, .496, .425, .356, .299, .246, .198, .138,
+     5 .090, .053, .028, .012, .004, .000, .000/
+      DATA UFILT/
+     1 .000, .000, .004, .010, .020, .033, .058, .097, .142, .192, .245,
+     2 .300, .356, .415, .475, .535, .596, .657, .721, .784, .846, .901,
+     3 .948, .982, .995,1.000, .993, .978, .956, .929, .898, .865, .827,
+     4 .787, .742, .691, .636, .575, .512, .444, .373, .306, .249, .200,
+     5 .159, .127, .100, .076, .058, .043, .031, .023, .015, .007, .002,
+     6 .000, .000/
+      DATA WFILT/
+     1 .000, .000, .025, .061, .130, .215, .300, .388, .475, .565, .652,
+     2 .736, .817, .893, .956, .997, .995, .953, .889, .814, .725, .628,
+     3 .534, .444, .359, .285, .211, .144, .080, .028, .005, .000, .000/
+      DATA VWAVE/
+     1 475. ,477.5,480. ,482.5,485. ,487.5,490. ,492.5,495. ,497.5,500.,
+     2 502.5,505. ,507.5,510. ,512.5,515. ,517.5,520. ,522.5,525.,527.5,
+     3 530. ,532.5,535. ,537.5,540. ,542.5,545. ,547.5,550. ,552.5,555.,
+     4 557.5,560. ,562.5,565. ,567.5,570. ,572.5,575. ,577.5,580. ,584.,
+     5 588., 592., 596., 600., 604., 608., 612., 616., 620., 624., 628.,
+     6 632., 636., 640., 644., 648., 652./
+      DATA BWAVE/
+     1 386., 387., 388., 389., 390., 391., 392., 393., 394., 395., 396.,
+     2 397., 398., 399., 400., 401.5,403., 404.5,406., 407.5,409.,410.5,
+     3 412., 413.5,415., 416.5,418., 419.5,421. ,422.5,424., 425.5,427.,
+     4 428.5,430., 432., 434., 436., 438., 440., 442., 444., 446., 448.,
+     5 450., 452., 454., 456., 458., 460., 462., 464., 466., 468., 470.,
+     6 472.5,475., 477.5,480., 482.5,485./
+      DATA LWAVE/
+     1 358., 359., 360., 361., 362., 363., 364., 365., 366., 367., 368.,
+     2 369., 370., 371., 372., 373., 374., 375., 376., 377., 378., 379.,
+     3 380., 381., 382., 383., 384., 385., 386., 387., 388., 389., 390.,
+     4 391., 392., 393., 394., 395., 396., 397., 398., 399., 400.,401.5,
+     5 403., 404.5,406., 407.5,409., 410.5,412./
+      DATA UWAVE/
+     1 337., 338., 339., 340., 341., 342., 343., 344., 345., 346., 347.,
+     2 348., 349., 350., 351., 352., 353., 354., 355., 356., 357., 358.,
+     3 359., 360., 361., 362., 363., 364., 365., 366., 367., 368., 369.,
+     4 370., 371., 372., 373., 374., 375., 376., 377., 378., 379., 380.,
+     5 381., 382., 383., 384., 385., 386., 387., 388., 389., 390., 391.,
+     6 392., 393./
+      DATA WWAVE/
+     1 310., 311., 312., 313., 314., 315., 316., 317., 318., 319., 320.,
+     2 321., 322., 323., 324., 325., 326., 327., 328., 329., 330., 331.,
+     3 332., 333., 334., 335., 336., 337., 338., 339., 340., 341., 342./  
+   77 FORMAT(10E12.4)
+      DO 312 I=1,NV
+  312 WAVEV(I)=VWAVE(1)+FLOAT(I)*.1
+      DO 12 I=1,NB
+   12 WAVEB(I)=BWAVE(1)+FLOAT(I)*.1
+      DO 13 I=1,NL
+   13 WAVEL(I)=LWAVE(1)+FLOAT(I)*.1
+      DO 14 I=1,NU
+   14 WAVEU(I)=UWAVE(1)+FLOAT(I)*.1
+      DO 114 I=1,NW
+  114 WAVEW(I)=WWAVE(1)+FLOAT(I)*.1
+      CALL PINTER(VWAVE,VFILT,54,WAVEV,SV,NV)
+      CALL PINTER(BWAVE,BFILT,23,WAVEB,SB,NB)
+      CALL PINTER(LWAVE,LFILT,27,WAVEL,SL,NL)
+      CALL PINTER(UWAVE,UFILT,32,WAVEU,SU,NU)
+      CALL PINTER(WWAVE,WFILT,18,WAVEW,SW,NW)
+      VNORM=0.
+C     IN CASE OF BAD INTERPOLATION
+      DO 315 I=1,NV
+  315 VNORM=VNORM+MAX(SV(I),0.)
+      VNORM=VNORM*.1
+      RNORM=0.
+      DO 15 I=1,NB
+   15 BNORM=BNORM+MAX(SB(I),0.)
+      BNORM=BNORM*.1
+      INORM=0.
+      DO 16 I=1,NL
+   16 LNORM=LNORM+MAX(SL(I),0.)
+      LNORM=LNORM*.1
+      UNORM=0.
+      DO 17 I=1,NU
+   17 UNORM=UNORM+MAX(SU(I),0.)
+      UNORM=UNORM*.1
+      KNORM=0.
+      DO 117 I=1,NW
+  117 WNORM=WNORM+MAX(SW(I),0.)
+      WNORM=WNORM*.1
+      VNOMAG=-2.5*ALOG10(VNORM)                                                
+      BNOMAG=-2.5*ALOG10(BNORM)
+      LNOMAG=-2.5*ALOG10(LNORM)
+      UNOMAG=-2.5*ALOG10(UNORM)
+      WNOMAG=-2.5*ALOG10(WNORM)
+C
+C
+CSDSC GRID  [+0.0]  VTURB 2.0 KM/S   L/H 1.25
+      READ(1,5)ABUND,VTURB,CONVEC
+    5 FORMAT(12X,F4.1,8X,F4.1,11X,F5.2)
+      DO 616 ISKIP=1,21
+  616 READ(1,1)
+C     wavelength in nm
+      READ(1,1)WAVE
+    1 FORMAT(8F10.2)
+      RV=3.1
+      EBV=.1
+C     CALL REDDENING(WAVE,RV,EBV,AMAG)
+      READ(2,344)
+      READ(2,344)
+      DO 366 NNU=1,1221
+  366 READ(2,344)
+      READ(2,344)
+      EBVI(1)=0.
+      READ(2,344)(EBVI(IRED),IRED=2,13)
+  344 FORMAT(10X,12F10.1)
+      DO 367 NNU=1,1221
+      TRANSI(1,NNU)=1.
+      READ(2,359)(TRANSI(IRED,NNU),IRED=2,13)
+  359 FORMAT(13X,12E10.3)
+  367 CONTINUE
+      WRITE(6,6)
+      WRITE(7,6)
+      WRITE(8,6)
+    6 FORMAT('        Teff log g  [M]  Vturb  l/H  E(B-V)',
+     1'    V       B       L       U       W',
+     2'      V-B     B-U     U-W     B-L')
+C      DO 1000 NMODEL=1,2                                              
+      DO 1000 NMODEL=1,1000                                              
+C     ergs/cm**2/s/hz/ster
+      READ(1,2,END=9)TITLE
+    2 FORMAT(A80)
+      PRINT 713,MODEL,TITLE
+  713 FORMAT(I5,1X,A80)
+      READ(TITLE,'(5X,I6,10X,F8.5)')ITEFF,GLOG
+C     ergs/cm**2/s/hz/ster
+      READ(1,4)Hnu
+      READ(1,4)HnuCONT
+    4 FORMAT(8E10.4)
+      NNU=1221
+      DO 900 IRED=1,13
+      DO 715 NNU=1,1221
+      FREQ=2.99792458E17/WAVE(NNU)
+  715 HLAM(NNU)=HNU(NNU)*FREQ/WAVE(NNU)*TRANSI(IRED,NNU)
+      CALL LINTER(WAVE,HLAM,NNU,WAVEV,F,NV)
+      VF=0.
+      DO 322 I=1,NV
+  322 VF=VF+SV(I)*F(I)
+      VF=VF*.1
+      CALL LINTER(WAVE,HLAM,NNU,WAVEB,F,NB)
+      BF=0.
+      DO 22 I=1,NB
+   22 BF=BF+SB(I)*F(I)
+      BF=BF*.1
+      CALL LINTER(WAVE,HLAM,NNU,WAVEL,F,NL)
+      LF=0.
+      DO 32 I=1,NL
+   32 LF=LF+SL(I)*F(I)
+      LF=LF*.1
+      CALL LINTER(WAVE,HLAM,NNU,WAVEU,F,NU)
+      UF=0.
+      DO 42 I=1,NU
+   42 UF=UF+SU(I)*F(I)
+      UF=UF*.1
+      CALL LINTER(WAVE,HLAM,NNU,WAVEW,F,NW)
+      WF=0.
+      DO 142 I=1,NW
+  142 WF=WF+SW(I)*F(I)
+      WF=WF*.1
+      VMAG=-2.5*ALOG10(VF)
+      BMAG=-2.5*ALOG10(BF)
+      LMAG=-2.5*ALOG10(LF)
+      UMAG=-2.5*ALOG10(UF)
+      WMAG=-2.5*ALOG10(WF)
+      VMAG=VMAG-VNOMAG
+      BMAG=BMAG-BNOMAG
+      LMAG=LMAG-LNOMAG
+      UMAG=UMAG-UNOMAG
+      WMAG=WMAG-WNOMAG
+      VMINB=VMAG-BMAG
+      BMINU=BMAG-UMAG
+      UMINW=UMAG-WMAG
+      BMINL=BMAG-LMAG
+C     NORMALIZATION TO 8850,4.16,2,+0.0= BETA LEO
+c     Lub, J. and Pel, J.W. 1977, A & A 54,137-158.
+C     V-B .034  B-U .436  U-W .108  B-L .198   
+c      V-B     B-U     U-W     B-L
+c     0.502  -0.609  -0.093  -0.059
+      VMINB=VMINB-.468
+      BMINU=BMINU+1.045
+      UMINW=UMINW+.201
+      BMINL=BMINL+.257
+      XSCALE=ABUND
+c     actually l/h
+      xh=CONVEC
+      if(ItEFF.GE.9000)xh=0.
+      WRITE(6,60)NMODEL,ITEFF,GLOG,XSCALE,VTURB,XH,EBVI(IRED),
+     1VMAG,BMAG,LMAG,UMAG,WMAG,VMINB,BMINU,UMINW,BMINL
+      WRITE(7,60)NMODEL,ITEFF,GLOG,XSCALE,VTURB,XH,EBVI(IRED),
+     1VMAG,BMAG,LMAG,UMAG,WMAG,VMINB,BMINU,UMINW,BMINL
+      IF(IRED.EQ.1)
+     1WRITE(8,60)NMODEL,ITEFF,GLOG,XSCALE,VTURB,XH,EBVI(IRED),
+     2VMAG,BMAG,LMAG,UMAG,WMAG,VMINB,BMINU,UMINW,BMINL
+   60 FORMAT(I6,I6,5F6.2,9F8.3)
+  900 CONTINUE
+ 1000 CONTINUE
+    9 CALL EXIT
+      END
+      SUBROUTINE LINTER(XOLD,YOLD,NOLD,XNEW,YNEW,NNEW)
+      DIMENSION XOLD(1),YOLD(1),XNEW(1),YNEW(1)
+C     XOLD AND XNEW INCREASING
+      IOLD=2
+      DO 2 INEW=1,NNEW
+    1 IF(XNEW(INEW).LT.XOLD(IOLD))GO TO 2
+      IF(IOLD.EQ.NOLD)GO TO 2
+      IOLD=IOLD+1
+      GO TO 1
+    2 YNEW(INEW)=YOLD(IOLD-1)+(YOLD(IOLD)-YOLD(IOLD-1))/
+     1(XOLD(IOLD)-XOLD(IOLD-1))*(XNEW(INEW)-XOLD(IOLD-1))
+      RETURN
+      END
+      SUBROUTINE PINTER(XOLD,FOLD,NOLD,XNEW,FNEW,NNEW)
+      DIMENSION XOLD(1),FOLD(1),XNEW(1),FNEW(1)
+      L=2
+      LL=0
+      DO 50 K=1,NNEW
+   10 IF(XNEW(K).LT.XOLD(L))GO TO 20
+      L=L+1
+      IF(L.GT.NOLD)GO TO 30
+      GO TO 10
+   20 IF(L.EQ.LL)GO TO 50
+      IF(L.EQ.2)GO TO 30
+      L1=L-1
+      IF(L.GT.LL+1.OR.L.EQ.3)GO TO 21
+      CBAC=CFOR
+      BBAC=BFOR
+      ABAC=AFOR
+      IF(L.EQ.NOLD)GO TO 22
+      GO TO 25
+   21 L2=L-2
+      D=(FOLD(L1)-FOLD(L2))/(XOLD(L1)-XOLD(L2))
+      CBAC=FOLD(L)/((XOLD(L)-XOLD(L1))*(XOLD(L)-XOLD(L2)))+
+     1(FOLD(L2)/(XOLD(L)-XOLD(L2))-FOLD(L1)/(XOLD(L)-XOLD(L1)))/
+     2(XOLD(L1)-XOLD(L2))
+      BBAC=D-(XOLD(L1)+XOLD(L2))*CBAC
+      ABAC=FOLD(L2)-XOLD(L2)*D+XOLD(L1)*XOLD(L2)*CBAC
+      IF(L.LT.NOLD)GO TO 25
+   22 C=CBAC
+      B=BBAC
+      A=ABAC
+      LL=L
+      GO TO 50
+   25 D=(FOLD(L)-FOLD(L1))/(XOLD(L)-XOLD(L1))
+      CFOR=FOLD(L+1)/((XOLD(L+1)-XOLD(L))*(XOLD(L+1)-XOLD(L1)))+
+     1(FOLD(L1)/(XOLD(L+1)-XOLD(L1))-FOLD(L)/(XOLD(L+1)-XOLD(L)))/
+     2(XOLD(L)-XOLD(L1))
+      BFOR=D-(XOLD(L)+XOLD(L1))*CFOR
+      AFOR=FOLD(L1)-XOLD(L1)*D+XOLD(L)*XOLD(L1)*CFOR
+      WT=0.
+      IF(ABS(CFOR).NE.0.)WT=ABS(CFOR)/(ABS(CFOR)+ABS(CBAC))
+      A=AFOR+WT*(ABAC-AFOR)
+      B=BFOR+WT*(BBAC-BFOR)
+      C=CFOR+WT*(CBAC-CFOR)
+      LL=L
+      GO TO 50
+   30 IF(L.EQ.LL)GO TO 50
+      L=AMIN0(NOLD,L)
+      C=0.
+      B=(FOLD(L)-FOLD(L-1))/(XOLD(L)-XOLD(L-1))
+      A=FOLD(L)-XOLD(L)*B
+      LL=L
+   50 FNEW(K)=A+(B+C*XNEW(K))*XNEW(K)
+      MAP1=LL-1
+      RETURN
+      END

@@ -1,0 +1,25 @@
+     Because of the primitive file naming limitation in ISO9660, some file 
+names on this CD are incomprehensible. 
+
+BET > BETA
+CA  > UVBYCA
+COU > COUSINS
+DDO > DDO
+GEN > GENEVA
+JHK > JHKCIT
+RIJ > RIJKL
+T13 > THIRTEEN
+UBV > UBV
+VBL > VBLUW
+VBY > UVBY
+VIL > VILNIUS
+
+     These systems are generally normalized to Vega except that VBLUW is
+normalized to alpha Leo.  The spectrophotometry for 109Vir and for HD19445, 
+which have been used as standards, can not be fit by this grid.  DDO IS 
+NOT NORMALIZED AND CANNOT BE USED AS IS.  THE USER MUST SET THE ZERO POINT.
+
+     These computed colors should be used with caution.  It is probable that 
+the transformation from the natural computed system to the standard system 
+is nonconstant or nonlinear and can only be found by comparing to many 
+standard stars.  The models may be physically incorrect.

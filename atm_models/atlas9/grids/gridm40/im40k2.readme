@@ -1,0 +1,8 @@
+An error was found in IM40K2.PCK by H. Gokhan GOKAY at Ankara
+University.  The models with Teff less than 4500K were computed
+incorrectly.  The file was corrected 21 June 2010.
+ 
+Except that Walter van Hamme of Florida International University 
+found an error in the 4000,4.5 model.  The file was replaced 
+22 Sept 2011.
+

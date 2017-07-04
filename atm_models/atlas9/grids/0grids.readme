@@ -1,0 +1,118 @@
+<HTML>
+<HEAD>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+<TITLE>Kurucz/Grids</TITLE>
+</HEAD>
+ 
+<BODY BGCOLOR="#F7F7F7">
+<H2><A>Castelli/Grids of model atmospheres</A></H2>
+<H2><A>Kurucz/Grids of model atmospheres</A></H2>
+<PRE><B>
+Naming scheme:
+Suffix
+   M01 = [-0.1} log metal abundance relative to solar
+   P00 = [+0.0] solar abundances from Anders and Grevesse (   )
+   P05 = [+0.5] log metal abundance relative to solar
+     A = alpha enchanced, the alpha-process elements (O, Ne, Mg, Si,
+         S, Ar, Ca, and Ti) enhanced by +0.4 in the log and Fe -4.53
+     B = alpha enchanced, the alpha-process elements (O, Ne, Mg, Si,
+         S, Ar, Ca, and Ti) enhanced by +1.0 in the log and Fe -4.53
+     F = solar Fe abundance reduced to current value -4.51
+    HE = He number fraction specified in per cent
+     Y = He mass fraction specified in per cent
+ NOVER = models with no convective overshooting computed by Fiorella
+         Castelli [castelli@ts.astro.it] in Trieste.  The convective
+         treatment is described in Castelli, Grattton, and Kurucz 1997,
+         A&A 328, 841.  Some colors are tabulated as well.  Files
+         labelled coubes* are Cousins with Bessell 1990 passbands
+         instead of the obsolete Bessell 1979 passbands used in my
+         calculations.
+ODFNEW = as NOVER but with newly computed ODFs with better opacities
+         and better abundances. (Consult Castelli; paper in preparation)
+         **THESE ARE THE PREFERRED MODELS**
+ 
+Prefix
+A = tables of temperatures-pressure relations for each model for a range
+    Teff and log gravity
+B = Balmer line profiles for each model
+F = fluxes for each model
+I = intensities for each model; limbdarkening for 17 angles
+ 
+All of the models from the CD-ROMs are here.  Some of the models that are
+weakly convective and have zero convection at the last point have a
+programming error that produces a small error in the flux.  This error is
+detectable when computed photometry is compared to high quality observed
+photometry.  This error has been corrected and many of the convective models
+have been recomputed.  The newer models and fluxes and colors should be used
+instead of those from CDROMs 13, 16, 17, and 19 which files are labelled
+with an extension ending in CD such as .datCD.  Strongly convective models
+are not significantly affected.  New CDs will be published.
+ 
+All of my convective models use an overshooting approximation that moves
+flux higher in the atmosphere above the top of the nominal convection zone.
+Many people do not like this approximation and want a pure unphysical
+mixing-length convection instead of an impure unphysical mixing-length
+convection.  Anyone is welcome to take the ATLAS9 programs in
+[PROGRAMS.ATLAS9] and the distribution function opacities in [OPACITIES.DF*]
+and to compute models with another convective treatment.  Fiorella Castelli
+has done that and has computed pure mixing-length grids for a number of
+abundances.  Those are given in directories with names suffixed with NOVER.
+The user can decide for herself.
+ 
+Directory             logical name
+[GRIDS]               GRIDS
+ 
+Logical name    subdirectory is [grids.logical name]
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm01/">GRIDM01</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm02/">GRIDM02</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm03/">GRIDM03</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm05/">GRIDM05</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm05ODFNEW/">GRIDM05ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm05AODFNEW/">GRIDM05AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm05NOVER/">GRIDM05NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10/">GRIDM10</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10ANOVER/">GRIDM10ANOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10AODFNEW/">GRIDM10AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10HE50/">GRIDM10HE50</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10NOVER/">GRIDM10NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm10ODFNEW/">GRIDM10ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm15/">GRIDM15</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm15NOVER/">GRIDM15NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm15ODFNEW/">GRIDM15ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm15ANOVER/">GRIDM15ANOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm15AODFNEW/">GRIDM15AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm20/">GRIDM20</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm20NOVER/">GRIDM20NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm20ODFNEW/">GRIDM20ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm20ANOVER/">GRIDM20ANOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm20AODFNEW/">GRIDM20AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm25/">GRIDM25</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm25NOVER/">GRIDM25NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm25ODFNEW/">GRIDM25ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm25ANOVER/">GRIDM25ANOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm25AODFNEW/">GRIDM25AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm30/">GRIDM30</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm35/">GRIDM35</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm40/">GRIDM40</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm40AODFNEW/">GRIDM40AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm45/">GRIDM45</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridm50/">GRIDM50</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP00/">GRIDP00</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP00aODFNEW/">GRIDP00AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP00NOVER/">GRIDP00NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP00ODFNEW/">GRIDP00ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP01/">GRIDP01</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP02/">GRIDP02</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP02ODFNEW/">GRIDP02ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP03/">GRIDP03</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP04/">GRIDP04</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP05/">GRIDP05</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP05NOVER/">GRIDP05NOVER</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP05ODFNEW/">GRIDP05ODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP05AODFNEW/">GRIDP05AODFNEW</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridP10/">GRIDP10</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridHBETA/">GRIDHBETA</A>
+<A HREF="HTTP://KURUCZ.harvard.edu/grids/gridHBETAcastelli/">GRIDHBETACASTELLI</A>
+</B></PRE>
+</BODY>
+</HTML>
