@@ -1,0 +1,25 @@
+synth
+standard_out  '../output/GQLup_harps_long.out'
+summary_out  '../output/GQLup_harps_li.out'
+smoothed_out  '../output/GQLup_harps_smooth.out'
+model_in  '../atm_models/GQLup_harps_v.atm'
+lines_in  '../MOOG_linelist/lines.GQLup_harps_v.ares'
+observed_in  '../Spectra/GQLup_harps_1.dat'
+atmosphere  1
+molecules  1
+trudamp  1
+lines    1
+flux/int  0
+damping    0
+freeform  0
+plot    3
+abundances  1 1
+   26 2.485489
+isotopes   0  1
+synlimits
+ 6150.6 6152.6 0.01 2.0
+obspectrum  5
+plotpars  1
+ 6150.62 6152.62 0.05 1.05
+ 0.0000  0.0000  0.000  1.000
+ r  0.053  0.0  0.6  2.69  0.0

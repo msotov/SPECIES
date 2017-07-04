@@ -67,9 +67,6 @@ parser.add_argument('-no_error', action = 'store_true', default = False,\
 parser.add_argument('-no_debug', action = 'store_true', default = False,\
                     help = 'Option to create a debug file for each star, '\
                            'where the details of the computation will be stored.')
-parser.add_argument('-no_plot_broadening', action = 'store_true', default = False,\
-                    help = 'Wheter you want to create a plot of the CCF '\
-                           'when computing the broadening velocity.')
 parser.add_argument('-no_check_t', action = 'store_true', default = False,\
                     help = 'Check the temperature with the one computed using '\
                            'the formulas from Casagrande et al. 2012.')
@@ -85,16 +82,14 @@ parser.add_argument('-file_coords', default = 'any_file.txt',\
                     help = 'Name of the file wiith the coordinates '\
                            'of the stars (in deg). '\
                            'Used only if check_t == True and use_coords == True.')
-
-parser.add_argument('-no_correct_broad', action = 'store_true', default = False,\
-                    help = 'Wheter correct the broadening velocity for the function \
-                            in Soto et al. 2017.')
-
-parser.add_argument('-mass_from_file', action = 'store_true', default = False)
+parser.add_argument('-mass_from_file', action = 'store_true', default = False,\
+                    help = 'Load the chains created during a previous mass calculation,\
+                            stored in dotter_isochrones/*.h5')
 
 
 args = parser.parse_args()
 
+# -output summary_N021969 -use_coords -starlist N021969
 
 #########################################################################
 # List of stars for which to compute the parameters
@@ -109,8 +104,7 @@ if 'any_star' in starlist:
           'Reading from inside SPECIES.py\n'
 
 
-    starlist = ['sun01']
-
+    #starlist = ['sun01']
     
 #########################################################################
 # Instruments to use
@@ -185,13 +179,6 @@ if error:
 #########################################################################
 
 set_debug = not args.no_debug
-
-#########################################################################
-# Plot the FFT used to compute the broadening
-#########################################################################
-
-plot_broadening = not args.no_plot_broadening
-correct_broad = not args.no_correct_broad
 
 #########################################################################
 # Check with the Casagrande et al. 2010 values for the temperature
@@ -279,7 +266,6 @@ else:
     for i in range(len(starname)):
         arg_list.append((starname[i], set_debug, hold_params, abundance_p[i],\
                         error, file_params, file_coefs_error, plots_coefs_error,\
-                        plot_broadening, correct_broad,\
                         check_T, colors_from_file, name_file_with_colors,\
                         hold_mass, file_hold_mass,\
                         use_coords, file_with_coords,\
@@ -318,7 +304,7 @@ else:
         ab_TiII, dev_TiII, nTiII, ab_CrI, dev_CrI, nCrI, ab_MnI, dev_MnI, nMnI,\
         ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, ab_ZnI, dev_ZnI, nZnI,\
         exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt,\
-        err_vt2, broadening, err_broad, vs, err_vs, vm, err_vm, mass, err_mass,\
+        err_vt2, vs, err_vs, vm, err_vm, mass, err_mass,\
         age, err_age, s_logg, err_s_logg, use_Tc = results.transpose()
 
 
@@ -379,7 +365,7 @@ else:
     if save_as_ascii == True:
 
         data = Table([name_star, instrument, xmetal, T, logg, micro, \
-            nFeI, nFeII, exception, broadening, err_broad, vs, err_vs, vm, \
+            nFeI, nFeII, exception, vs, err_vs, vm, \
             err_vm, ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI,\
             ab_AlI, dev_AlI, nAlI, ab_SiI, dev_SiI, nSiI, ab_CaI, dev_CaI, \
             nCaI, ab_TiI, dev_TiI, nTiI, nTiII, ab_CrI, dev_CrI, nCrI, \
@@ -389,7 +375,7 @@ else:
             mass, err_mass, age, err_age, s_logg, err_s_logg, use_Tc],\
             names = ['Starname', 'Instrument', '[Fe/H]', 'Temperature', 'logg', \
             'vt', 'nFeI', 'nFeII', 'exception',\
-            'broadening', 'err_broad', 'vsini', 'err_vsini', 'vmac', 'err_vmac',\
+            'vsini', 'err_vsini', 'vmac', 'err_vmac',\
             '[Na/H]', 'e_[Na/H]', 'nNaI', '[Mg/H]', 'e_[Mg/H]', 'nMgI', \
             '[Al/H]', 'e_[Al/H]', 'nAlI', '[Si/H]', 'e_[Si/H]', 'nSiI', \
             '[Ca/H]', 'e_[Ca/H]', 'nCaI', '[Ti/H]', 'e_[Ti/H]', 'nTiI', 'nTiII',\
@@ -400,7 +386,7 @@ else:
             'err_vt', 'err_vt2', 'Mass', 'err_mass', 'age', 'err_age', \
             'Photo_logg', 'err_photo_logg', 'use_Tc'],\
             dtype = ['str', 'str', 'float', 'float', 'float', 'float', 'int', \
-            'int', 'int', 'float', 'float', 'float', 'float', 'float', 'float', \
+            'int', 'int', 'float', 'float', 'float', 'float', \
             'float', 'float', 'int', 'float', 'float', 'int', 'float', 'float', \
             'int', 'float', 'float', 'int', 'float', 'float', 'int', 'float', \
             'float', 'int', 'int', 'float', 'float', 'int', 'float', 'float', \
@@ -414,9 +400,8 @@ else:
         data['[Cr/H]'].format = data['[Mn/H]'].format = data['[Ni/H]'].format = \
                 data['[Cu/H]'].format = data['[Zn/H]'].format = '%8.2f'
         data['Temperature'].format = '.1f'
-        data['err_broad'].format = '.4f'
         data['Mass'].format = data['age'].format = '%8.2f'
-        data['logg'].format = data['vt'].format = data['broadening'].format = \
+        data['logg'].format = data['vt'].format = \
                 data['vsini'].format = data['err_vsini'].format = \
                 data['vmac'].format = data['err_vmac'].format = \
                 data['e_[Na/H]'].format = data['e_[Mg/H]'].format = \
@@ -447,8 +432,6 @@ else:
         c8 = fits.Column(name = 'exception', format = 'J', array = exception)
         c9 = fits.Column(name = '[FeI/H]', format = 'E', array = ab_FeI)
         c10 = fits.Column(name = '[FeII/H]', format = 'E', array = ab_FeII)
-        c11 = fits.Column(name = 'broadening', format = 'E', array = broadening)
-        c12 = fits.Column(name = 'err_broad', format = 'E', array = err_broad)
 
         c13 = fits.Column(name = 'err_T', format = 'E', array = err_T)
         c14 = fits.Column(name = 'err_T2', format = 'E', array = err_T2)
@@ -512,7 +495,7 @@ else:
 
         c73 = fits.Column(name = 'Instrument', format = '20A', array = instrument)
 
-        coldefs = fits.ColDefs([c1, c73, c2, c3, c4, c5, c6, c7, c8, c11, c12,\
+        coldefs = fits.ColDefs([c1, c73, c2, c3, c4, c5, c6, c7, c8,\
                     c69, c70, c71, c72, c23, c24, c25, c26, c27, c28, c29, c30, c31,\
                     c32, c33, c34, c35, c36, c37, c38, c39, c40, c41, c42, c43, c44,\
                     c45, c46, c47, c48, c49, c50, c51, c52, c53, c54, c55, c56, c57,\

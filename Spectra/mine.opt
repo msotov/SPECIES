@@ -1,0 +1,11 @@
+specfits='HD26965_harps_res.fits'
+readlinedat='lines_ab.dat'
+fileout='.././EW/HD26965_harps_ab.ares'
+lambdai=3600.
+lambdaf=9000.
+smoothder=4
+space=3.0
+rejt=0.995915
+lineresol=0.1
+miniline=2
+plots_flag=0

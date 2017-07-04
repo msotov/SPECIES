@@ -1,0 +1,13 @@
+abfind
+terminal    null
+atmosphere  1
+molecules   1
+lines       1
+flux/int    0
+plot        1
+damping     2
+units       0
+standard_out  '../output/HIP10212_feros_random.test'
+summary_out   '../output/HIP10212_feros_out_random.test'
+model_in      '../interpol_models/HIP10212_feros.atm'
+lines_in      '../make_moog_ares_list/lines_random.HIP10212_feros.ares'
