@@ -364,7 +364,7 @@ class Vsini(object):
             self.S = self.perf_new(self.v_grid, self.best_a, mode = 'vsini')
             self.S_v = self.S
 
-            tck = UnivariateSpline(self.v_grid, self.S, k = 4, s = 0.1)
+            tck = UnivariateSpline(self.v_grid, self.S, k = 4, s = 0.05)
             yfit = tck.__call__(self.v_grid)
 
             self.yfit_v = yfit
@@ -504,6 +504,9 @@ class Vsini(object):
                 self.a_guess = np.array([self.best_a-\
                     self.a_width/2/self.pace[1], self.best_a+\
                         self.a_width/2/self.pace[1]])
+                if np.abs(self.a_guess[1] - self.a_guess[0]) < 0.05:
+                    self.a_guess = np.array([self.best_a - 0.025,\
+                            self.best_a + 0.025])
 
             # Checking if the v_guess contains vsini lower than v_low_limit.
             # If True, it will add a value to the array so that the lower limit
@@ -1177,7 +1180,7 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
             elif inst == 'feros' or inst == 'feros_o':
                 gauss = w/48000.
             elif inst == 'uves':
-                gauss = w/47000.
+                gauss = w/110000.
             elif inst == 'hires':
                 gauss = w/67000.
             elif inst == 'coralie':
@@ -1189,16 +1192,17 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
             vrot = Vsini(spec_window, gauss, v_macro[l], line_file, l, SN, **kwargs)
 
 
-            kwargs2 = {'a_guess' : np.array([(lines_ab['%.3f' % w]) - 1.0*dev_ab['%.3f' % w], (lines_ab['%.3f' % w]) + 1.0*dev_ab['%.3f' % w]]),\
+            kwargs2 = {'a_guess' : np.array([(lines_ab['%.3f' % w]) - 1.5*max(0.1,dev_ab['%.3f' % w]), (lines_ab['%.3f' % w]) + 1.5*max(0.1,dev_ab['%.3f' % w])]),\
                        'v_guess' : np.array([0.5, 10.]),\
                        'save' : True,\
                        'N' : 30,\
-                       'v_low_limit' : 0.5,\
+                       'v_low_limit' : 0.1,\
                        'max_i' : 30}
 
 
             vrot = vrot.find(**kwargs2)
-
+            if vrot.best_v == kwargs2['v_low_limit']:
+                vrot.badfit_status = True
 
             info_line['data'] = vrot.MOOG.data
             info_line['model'] = vrot.MOOG.model

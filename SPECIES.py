@@ -82,6 +82,7 @@ parser.add_argument('-file_coords', default = 'any_file.txt',\
                     help = 'Name of the file wiith the coordinates '\
                            'of the stars (in deg). '\
                            'Used only if check_t == True and use_coords == True.')
+
 parser.add_argument('-mass_from_file', action = 'store_true', default = False,\
                     help = 'Load the chains created during a previous mass calculation,\
                             stored in dotter_isochrones/*.h5')
@@ -105,7 +106,60 @@ if 'any_star' in starlist:
 
 
     #starlist = ['sun01']
-    
+    #starlist = ['ceres01','ceres02','ceres03','moon01','ganymede01','sun01','sun02','sun03','sun04','sun05']
+    #starlist = ['ceres03']
+    #starlist = ['HD10002']
+
+    #starlist = ['GL397', 'HD9986', 'HD72490', 'HD111814', 'HD171918', 'HD202696', 'HD214823', 'HD26965']
+    #starlist = ['GL397']
+
+    #starlist = ['HD100942', 'HD11112']
+    #starlist = ['HD26965']
+    starlist = np.genfromtxt('./Spectra/stars_sousa.txt', dtype = None, unpack = True, delimiter = '\n')
+    starlist = [str(s).replace(' ', '') for s in starlist]
+    #starlist = ['HD11964A']
+
+    #starlist = ['arcturus01', 'arcturus02', 'arcturus03']
+    #starlist = ['arcturus03']
+    #print starlist
+    #press = raw_input('press')
+    #starlist = ['HD28185']
+
+    #starlist = ['NG021676']
+    #starlist = ['N021969']
+
+    #files = glob.glob('./mari_cheps/*.fits')
+    #names = [f[30:-5] for f in files]
+    #for i in range(len(names)):
+    #    if names[i][:2] == 'HD' or names[i][:3] == 'HIP':
+    #        names[i] = names[i].replace('-','')
+    #starlist = np.hstack((starlist,names))
+
+    #from astropy.io import ascii
+
+    #data1 = ascii.read('./output/summary_stars_sousa_all_inst_test3.dat')
+    #data2 = ascii.read('./output/summary_cheps_stars.dat')
+    #data = np.hstack((data1, data2))
+
+    #exception = data['exception']
+    #use_Tc = data['use_Tc']
+    #inst = data['Instrument']
+
+    #i = np.where((exception == 1) & (inst == 'HARPS'))[0]
+
+    #starlist = data['Starname'][i]
+
+'''
+    starlist = ['HD283', 'HD6348', 'HD9796', 'HD10647', 'HD12345', 'HD12617', 'HD14744',
+ 'HD17051', 'HD34688', 'HD38858', 'HD44573', 'HD65907A', 'HD69830', 'HD72673',
+ 'HD74014', 'HD83529', 'HD85512', 'HD86065', 'HD93380', 'HD98356', 'HD100508',
+ 'HD100777', 'HD101581', 'HD104263', 'HD114386', 'HD116858', 'HD116920',
+ 'HD123265', 'HD129642', 'HD134606', 'HD143295', 'HD146233', 'HD154363',
+ 'HD176157', 'HD177565', 'HD199933', 'HD207129', 'HD210277', 'HD210975',
+ 'HD212301', 'HD216777', 'HD221420', 'Gamma-Tau', 'HD126535', 'HD38467',
+ 'HD68402', 'HD72892', 'HD77338', 'HD9174', 'HIP4909', 'HIP6407', 'HIP8507',
+ 'HIP11915', 'HIP30037', 'HIP31831', 'HIP53084', 'HIP69724']
+'''
 #########################################################################
 # Instruments to use
 #########################################################################
@@ -289,6 +343,7 @@ else:
 
     i_none = np.where(results.T[0] == None)[0]
     results = np.delete(results, i_none, 0)
+
 
     del i_none
 

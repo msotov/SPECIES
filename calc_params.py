@@ -43,7 +43,7 @@ def multi_run_wrapper(args):
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 2, 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
                 0.0, 0.0, 0.0, 0.0, 'no')
 
 
@@ -1284,9 +1284,9 @@ def run_iteration(starlist,\
         #elif (4820 <= T < 5520) == True: mask = 'K0'
         #else: mask = 'G2'
 
-        if make_plot_broadening == True:
-            if not os.path.exists('./output/plots_broadening'):
-                os.makedirs('./output/plots_broadening')
+        #if make_plot_broadening == True:
+        #    if not os.path.exists('./output/plots_broadening'):
+        #        os.makedirs('./output/plots_broadening')
 
         #broadening, error_broadening, \
         #    vs, err_vs, vm, err_vm = calc_broadening(star, mask, \
