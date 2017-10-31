@@ -87,6 +87,10 @@ parser.add_argument('-mass_from_file', action = 'store_true', default = False,\
                     help = 'Load the chains created during a previous mass calculation,\
                             stored in dotter_isochrones/*.h5')
 
+parser.add_argument('-vt_hold', action = 'store_true', default = False,\
+                    help = 'Try the computation with vt = 1.2 km/s in the case it \
+                            does not converge. Default is False.')
+
 
 args = parser.parse_args()
 
@@ -115,8 +119,8 @@ if 'any_star' in starlist:
 
     #starlist = ['HD100942', 'HD11112']
     #starlist = ['HD26965']
-    starlist = np.genfromtxt('./Spectra/stars_sousa.txt', dtype = None, unpack = True, delimiter = '\n')
-    starlist = [str(s).replace(' ', '') for s in starlist]
+    #starlist = np.genfromtxt('./Spectra/stars_sousa.txt', dtype = None, unpack = True, delimiter = '\n')
+    #starlist = [str(s).replace(' ', '') for s in starlist]
     #starlist = ['HD11964A']
 
     #starlist = ['arcturus01', 'arcturus02', 'arcturus03']
@@ -135,6 +139,8 @@ if 'any_star' in starlist:
     #        names[i] = names[i].replace('-','')
     #starlist = np.hstack((starlist,names))
 
+    #starlist = ['CL002-0', 'CL002-1', 'CL002-2', 'CL002-3', 'CL002-4', 'CL002-5', 'CL002-6', 'CL002-7', 'CL002-8']
+
     #from astropy.io import ascii
 
     #data1 = ascii.read('./output/summary_stars_sousa_all_inst_test3.dat')
@@ -148,6 +154,12 @@ if 'any_star' in starlist:
     #i = np.where((exception == 1) & (inst == 'HARPS'))[0]
 
     #starlist = data['Starname'][i]
+
+    #starlist1 = glob.glob('./Spectra/*norm*fits')
+    #starlist1 += glob.glob('./Spectra/*orig*fits')
+    starlist1 = glob.glob('./Spectra/Gaia*.fits')
+
+    starlist = [l[10:-11] for l in starlist1]
 
 '''
     starlist = ['HD283', 'HD6348', 'HD9796', 'HD10647', 'HD12345', 'HD12617', 'HD14744',
@@ -246,6 +258,12 @@ if name_file_with_colors != None:
 use_coords = args.use_coords
 file_with_coords = args.file_coords
 
+#########################################################################
+# Try with vt = 1.2 km/s if the computation does not converge
+#########################################################################
+
+try_with_vt_hold = args.vt_hold
+
 
 
 #########################################################################
@@ -323,7 +341,8 @@ else:
                         check_T, colors_from_file, name_file_with_colors,\
                         hold_mass, file_hold_mass,\
                         use_coords, file_with_coords,\
-                        set_boundaries, file_with_boundaries, mass_from_file))
+                        set_boundaries, file_with_boundaries, mass_from_file,\
+                        try_with_vt_hold))
 
 
     ############################################################################
@@ -360,7 +379,7 @@ else:
         ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, ab_ZnI, dev_ZnI, nZnI,\
         exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt,\
         err_vt2, vs, err_vs, vm, err_vm, mass, err_mass,\
-        age, err_age, s_logg, err_s_logg, use_Tc = results.transpose()
+        age, err_age, s_logg, err_s_logg, radius, err_radius, use_Tc, use_vt = results.transpose()
 
 
 
@@ -418,18 +437,22 @@ else:
     ############################################################################
 
     if save_as_ascii == True:
-
-        data = Table([name_star, instrument, xmetal, T, logg, micro, \
-            nFeI, nFeII, exception, vs, err_vs, vm, \
-            err_vm, ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI,\
-            ab_AlI, dev_AlI, nAlI, ab_SiI, dev_SiI, nSiI, ab_CaI, dev_CaI, \
-            nCaI, ab_TiI, dev_TiI, nTiI, nTiII, ab_CrI, dev_CrI, nCrI, \
-            ab_MnI, dev_MnI, nMnI, ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI,\
-            nCuI, ab_ZnI, dev_ZnI, nZnI, exception_Fe, exception_Ti, \
-            ab_FeI, ab_FeII, err_T, err_T2, err_logg, err_met, err_vt, err_vt2, \
-            mass, err_mass, age, err_age, s_logg, err_s_logg, use_Tc],\
-            names = ['Starname', 'Instrument', '[Fe/H]', 'Temperature', 'logg', \
-            'vt', 'nFeI', 'nFeII', 'exception',\
+        
+        data = Table([name_star, instrument, \
+            xmetal, err_met, T, err_T, logg, err_logg, micro, err_vt, \
+            nFeI, nFeII, exception, vs, err_vs, vm, err_vm, \
+            ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI,\
+            ab_AlI, dev_AlI, nAlI, ab_SiI, dev_SiI, nSiI, \
+            ab_CaI, dev_CaI, nCaI, ab_TiI, dev_TiI, nTiI, nTiII, \
+            ab_CrI, dev_CrI, nCrI, ab_MnI, dev_MnI, nMnI, \
+            ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, \
+            ab_ZnI, dev_ZnI, nZnI, exception_Fe, exception_Ti, \
+            ab_FeI, ab_FeII, \
+            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius, \
+            use_Tc, use_vt, err_vt2, err_T2],\
+            names = ['Starname', 'Instrument', '[Fe/H]', 'err_[Fe/H]', \
+            'Temperature', 'err_T', 'logg', 'err_logg', 'vt', 'err_vt', \
+            'nFeI', 'nFeII', 'exception',\
             'vsini', 'err_vsini', 'vmac', 'err_vmac',\
             '[Na/H]', 'e_[Na/H]', 'nNaI', '[Mg/H]', 'e_[Mg/H]', 'nMgI', \
             '[Al/H]', 'e_[Al/H]', 'nAlI', '[Si/H]', 'e_[Si/H]', 'nSiI', \
@@ -437,25 +460,25 @@ else:
             '[Cr/H]', 'e_[Cr/H]', 'nCrI', '[Mn/H]', 'e_[Mn/H]', 'nMnI',\
             '[Ni/H]', 'e_[Ni/H]', 'nNiI', '[Cu/H]', 'e_[Cu/H]', 'nCuI', \
             '[Zn/H]', 'e_[Zn/H]', 'nZnI', 'exception_Fe', 'exception_Ti', \
-            '[FeI/H]', '[FeII/H]', 'err_T', 'err_T2', 'err_logg', 'err_[Fe/H]', \
-            'err_vt', 'err_vt2', 'Mass', 'err_mass', 'age', 'err_age', \
-            'Photo_logg', 'err_photo_logg', 'use_Tc'],\
-            dtype = ['str', 'str', 'float', 'float', 'float', 'float', 'int', \
+            '[FeI/H]', '[FeII/H]', 'Mass', 'err_mass', 'Age', 'err_age', \
+            'Photo_logg', 'err_photo_logg', 'Radius', 'err_radius', \
+            'use_Tc', 'use_vt', 'err_vt2', 'err_T2'],\ 
+            dtype = ['str', 'str', 'float', 'float', 'float', 'float', \
+            'float', 'float', 'float', 'float', 'int', \
             'int', 'int', 'float', 'float', 'float', 'float', \
             'float', 'float', 'int', 'float', 'float', 'int', 'float', 'float', \
             'int', 'float', 'float', 'int', 'float', 'float', 'int', 'float', \
             'float', 'int', 'int', 'float', 'float', 'int', 'float', 'float', \
             'int', 'float', 'float', 'int', 'float', 'float', 'int', 'float', \
-            'float', 'int', 'int', 'int', 'float', 'float', 'float', 'float', \
-            'float', 'float', 'float', 'float', 'float', 'float', 'float', \
-            'float', 'float', 'float', 'str'])
+            'float', 'int', 'int', 'int', 'float', 'float', 'float', 'float', 'float', \
+            'float', 'float', 'float', 'float', 'float', 'str', 'str', 'float', 'float'])
         data['[Fe/H]'].format = data['[Na/H]'].format = data['[Mg/H]'].format = \
                 data['[Al/H]'].format = data['[Si/H]'].format = \
                 data['[Ca/H]'].format = data['[Ti/H]'].format = '%8.2f'
         data['[Cr/H]'].format = data['[Mn/H]'].format = data['[Ni/H]'].format = \
                 data['[Cu/H]'].format = data['[Zn/H]'].format = '%8.2f'
         data['Temperature'].format = '.1f'
-        data['Mass'].format = data['age'].format = '%8.2f'
+        data['Mass'].format = data['age'].format = data['Radius'].format = '%8.2f'
         data['logg'].format = data['vt'].format = \
                 data['vsini'].format = data['err_vsini'].format = \
                 data['vmac'].format = data['err_vmac'].format = \
@@ -470,7 +493,8 @@ else:
                 data['err_[Fe/H]'].format = data['err_vt'].format = \
                 data['err_vt2'].format = data['err_mass'].format = \
                 data['err_age'].format = data['Photo_logg'].format = \
-                data['err_photo_logg'].format = '.3f'
+                data['err_photo_logg'].format = data['err_radius'].format = '.3f'
+
 
         ascii.write(data, './output/' + file_output + '.dat', \
                     format = 'fixed_width', delimiter = None)
@@ -550,12 +574,17 @@ else:
 
         c73 = fits.Column(name = 'Instrument', format = '20A', array = instrument)
 
+        c74 = fits.Column(name = 'Radius', format = 'E', array = radius)
+        c75 = fits.Column(name = 'err_radius', format = 'E', array = err_radius)
+        c76 = fits.Column(name = 'use_vt', format = '5A', array = use_vt)
+
+
         coldefs = fits.ColDefs([c1, c73, c2, c3, c4, c5, c6, c7, c8,\
                     c69, c70, c71, c72, c23, c24, c25, c26, c27, c28, c29, c30, c31,\
                     c32, c33, c34, c35, c36, c37, c38, c39, c40, c41, c42, c43, c44,\
                     c45, c46, c47, c48, c49, c50, c51, c52, c53, c54, c55, c56, c57,\
                     c58, c9, c10, c13, c14, c15, c16, c17, c66, c59, c60, c61, c62,\
-                    c63, c64, c68])
+                    c63, c64, c74, c75, c68, c76])
 
         tbhdu = fits.BinTableHDU.from_columns(coldefs)
         tbhdu.writeto('./output/' + file_output + '.fits', clobber = True)

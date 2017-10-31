@@ -262,14 +262,18 @@ def restframe(archivo):
     header = hdulist[0].header
     x, data = pyasl.read1dFitsSpec(archivo)
 
+    if 'CUNIT1' in header:
+        if header['CUNIT1'] == 'NM':
+            x = x*10.
+
     check_corr = True
 
     lineas = [6021.8, 6024.06, 6027.06, 6562.81]
     name_lineas = ['6021.8', '6024.06', '6027.06', 'H-alpha']
 
     i_range = np.where((x>=5500) & (x <= 6050))[0]
-    x_range = x[i_range]
-    data_range = data[i_range]
+    x_range = np.copy(x)[i_range]
+    data_range = np.copy(data)[i_range]
 
     if len(data_range) == 0:
         print '\t\tWavelength range to correct to restframe is not present. Cannot create the _res.fits file.'
@@ -289,13 +293,18 @@ def restframe(archivo):
 
         delta = header['CDELT1']
         x0 = header['CRVAL1']
+        if 'CUNIT1' in header:
+            if header['CUNIT1'] == 'NM':
+                delta = delta*10.
+                x0 = x0*10.
+
         if (rv/c) != (-1.):
             delta = delta/(1. + rv/c)
             x0 = x0/(1. + rv/c)
 
         #x2 = [x[i]/(1. + rv/c) for i in range(len(x))]
         #x2 = np.array(x2)
-        x2 = x/(1. + rv/c)
+        x2 = np.copy(x)/(1. + rv/c)
         z = rv/c
 
         print '\t\trv = %f km/s' % rv
@@ -354,7 +363,10 @@ def restframe(archivo):
         header['CRVAL1'] = x2[0]
         header['CDELT1'] = float(delta)
 
-        pyfits.writeto(nombre + '_res.fits', data = data, header = header[:20], clobber = True)
+        try:
+            pyfits.writeto(nombre + '_res.fits', data = data, header = header, clobber = True)
+        except:
+            pyfits.writeto(nombre + '_res.fits', data = data, header = header[:20], clobber = True)
 
         hdulist.close()
 

@@ -64,7 +64,11 @@ def harps(starname, abundances = False):
 
     snr = 0.0
 
-    if len(hdu[0].data.shape) == 1:
+    if hdu[0].data is None:
+        xnew = hdu[1].data['WAVE'][0]
+        ynew = hdu[1].data['FLUX'][0]
+        dif = [xnew[i+1] - xnew[i] for i in range(len(xnew)-1)]
+        delta_x = np.mean(dif)
 
         if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
             sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
@@ -72,63 +76,8 @@ def harps(starname, abundances = False):
             del sn
         hdu.close()
 
-        del hdu, header0
 
-    else:
-
-        rangos_w = []
-        tcks = []
-        deltas = []
-
-        rangos = []
-
-        data = hdu[0].data[3]
-        x = hdu[0].data[0]
-
-        for i in range(x.shape[0]):
-            data_i = data[i]
-            x_i = x[i]
-
-            rangos_w.append([x_i[0], x_i[-1]])
-            deltas.append(x_i[1] - x_i[0])
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x_i, data_i, k = 5)
-            tcks.append(tck_flux)
-
-            rangos.append(x_i[0])
-            rangos.append(x_i[-1])
-
-            del data_i, x_i, tck_flux
-
-        del data, x
-
-        hdu.close()
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        deltas.reverse()
-        rangos_w.reverse()
-        tcks.reverse()
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-            del xmin_p0, xmax_p0, indices, tck
-
-
-        # Creates the fits file with the 1D spectra
+        # Create the new image
 
         os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
         os.system('rm -f ' + starname + '.fits')
@@ -151,8 +100,151 @@ def harps(starname, abundances = False):
         hdu.flush()
         hdu.close()
 
-        del header0, rangos_w, tcks, deltas, rangos, xnew, ynew,\
-            delta_x, xmin, xmax, Nnew, header_new, hdu
+        del hdu, header0, xnew, ynew, dif, delta_x, header_new
+
+
+    else:
+
+
+        if len(hdu[0].data.shape) == 1:
+
+            if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
+                sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
+                snr = np.median(sn)
+                del sn
+            elif ('SNR' in header0):
+                snr = header0['SNR']
+            hdu.close()
+
+            del hdu, header0
+
+        elif len(hdu[0].data.shape) == 2 and hdu[0].data.shape[0] == 2:
+
+            xnew_0 = hdu[0].data[0]
+            ynew_0 = hdu[0].data[1]
+
+            hdu.close()
+
+            inan = np.where(np.isnan(ynew_0) == False)[0]
+
+            tck = interpolate.InterpolatedUnivariateSpline(xnew_0[inan], ynew_0[inan], k = 5)
+
+            del inan
+
+            delta_av = np.median([xnew_0[i+1] - xnew_0[i] for i in range(len(xnew_0)-1)])
+
+            xnew = np.arange(xnew_0[0], xnew_0[-1], delta_av)
+            ynew = tck.__call__(xnew)
+
+            os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
+            os.system('rm -f ' + starname + '.fits')
+
+            pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
+
+            hdu = pyfits.open(starname + '.fits', mode = 'update')
+            header_new = hdu[0].header
+
+            header_new['CRPIX1'] = (1., 'Reference pixel')
+            header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
+            header_new['CDELT1'] = (delta_av, 'Coordinate increment per pixel')
+
+            if 'RA' and 'DEC' in header0.keys():
+                header_new['RA'] = (header0['RA'], '')
+                header_new['DEC'] = (header0['DEC'], '')
+
+            header_new.add_comment('Image created after combining orders')
+
+            hdu.flush()
+            hdu.close()
+
+            if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
+                sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
+                snr = np.median(sn)
+                del sn
+            elif ('SNR' in header0):
+                snr = header0['SNR']
+
+            del hdu, header0
+
+        else:
+
+            rangos_w = []
+            tcks = []
+            deltas = []
+
+            rangos = []
+
+            data = hdu[0].data[3]
+            x = hdu[0].data[0]
+
+            for i in range(x.shape[0]):
+                data_i = data[i]
+                x_i = x[i]
+
+                rangos_w.append([x_i[0], x_i[-1]])
+                deltas.append(x_i[1] - x_i[0])
+                tck_flux = interpolate.InterpolatedUnivariateSpline(x_i, data_i, k = 5)
+                tcks.append(tck_flux)
+
+                rangos.append(x_i[0])
+                rangos.append(x_i[-1])
+
+                del data_i, x_i, tck_flux
+
+            del data, x
+
+            hdu.close()
+
+            delta_x = max(deltas)
+            xmin = min(rangos)
+            xmax = max(rangos)
+            Nnew = abs(xmin - xmax)/delta_x
+            if round(Nnew) < Nnew: Nnew = Nnew + 1
+            Nnew = int(Nnew)
+
+            xnew = np.linspace(xmin, xmax, Nnew)
+            ynew = np.zeros(len(xnew))
+
+            deltas.reverse()
+            rangos_w.reverse()
+            tcks.reverse()
+
+            for p in range(len(deltas)):
+                xmin_p0 = rangos_w[p][0]
+                xmax_p0 = rangos_w[p][1]
+
+                indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
+                tck = tcks[p]
+                ynew[indices] = tck.__call__(xnew[indices])
+
+                del xmin_p0, xmax_p0, indices, tck
+
+
+            # Creates the fits file with the 1D spectra
+
+            os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
+            os.system('rm -f ' + starname + '.fits')
+
+            pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
+
+            hdu = pyfits.open(starname + '.fits', mode = 'update')
+            header_new = hdu[0].header
+
+            header_new['CRPIX1'] = (1., 'Reference pixel')
+            header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
+            header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
+
+            if 'RA' and 'DEC' in header0.keys():
+                header_new['RA'] = (header0['RA'], '')
+                header_new['DEC'] = (header0['DEC'], '')
+
+            header_new.add_comment('Image created after combining orders')
+
+            hdu.flush()
+            hdu.close()
+
+            del header0, rangos_w, tcks, deltas, rangos, xnew, ynew,\
+                delta_x, xmin, xmax, Nnew, header_new, hdu
 
 
     ##############################################
@@ -193,6 +285,49 @@ def harps(starname, abundances = False):
 
 def feros(starname, abundances = False):
 
+    hdu = pyfits.open(starname + '.fits')
+    header0 = hdu[0].header
+
+    snr = 0.0
+
+    if hdu[0].data is None:
+        xnew = hdu[1].data['WAVE'][0]
+        ynew = hdu[1].data['FLUX'][0]
+        dif = [xnew[i+1] - xnew[i] for i in range(len(xnew)-1)]
+        delta_x = np.mean(dif)
+
+        if 'SNR' in header0.keys():
+            snr = header0['SNR']
+        hdu.close()
+
+        # Create the new image
+
+        os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
+        os.system('rm -f ' + starname + '.fits')
+
+        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
+
+        hdu = pyfits.open(starname + '.fits', mode = 'update')
+        header_new = hdu[0].header
+
+        header_new['CRPIX1'] = (1., 'Reference pixel')
+        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
+        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
+
+        if 'RA' and 'DEC' in header0.keys():
+            header_new['RA'] = (header0['RA'], '')
+            header_new['DEC'] = (header0['DEC'], '')
+
+        header_new.add_comment('Image created after combining orders')
+
+        hdu.flush()
+        hdu.close()
+
+        del xnew, ynew, dif, delta_x, header_new
+
+    del hdu, header0
+
+
     ##############################################
     # Correct to restframe
     ##############################################
@@ -210,7 +345,8 @@ def feros(starname, abundances = False):
 
         x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
 
-        snr = compute_snr(x, data)
+        if snr == 0.0:
+            snr = compute_snr(x, data)
 
         ab = abundances
         plot_lines(x, data, starname, abundances = ab)
@@ -1267,9 +1403,17 @@ def coralie(starname, abundances = False):
 
     if (is_raw_image == True) and (header0['NAXIS'] != 1):
 
-        data = hdulist[0].data
-        wave = data[0]
-        flux = data[3]
+        if header0['NAXIS'] == 3:
+            data = hdulist[0].data
+            wave = data[0]
+            flux = data[1]
+
+        else:
+
+            data = hdulist[0].data
+            wave = data[0]
+            flux = data[3]
+
         hdulist.close()
 
         rangos_w = []

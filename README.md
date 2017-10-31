@@ -6,6 +6,8 @@ Please cite Soto & Jenkins 2017, in prep. if your use SPECIES for your code.
 
 Authors: Maritza Soto and James Jenkins.
 
+(SPECIES went through some major changes. If you installed SPECIES before November 2017, please update all the packages and make sure you include the MOOGPATH in your bash file (section \ref{moogpath} in the User manual). It is not necessary to reinstall ARES nor MOOG).
+
 # Computation of parameters
 
 The atmospheric parameters (temperature, metallicity, surface gravity and microturbulence velocity) are computed by measuring the equivalent widths of several iron lines, done using ARES (Sousa et al. 2008). These are then given to MOOG (Sneden 1973), which solves the radiative transfer equation assuming local thermodynamic equilibrium (LTE) conditions. The atmospheric parameters are then derived through an iterative process that stops when no correlation is found between the line abundances with the excitation potential and the equivalent width. The atmospheric models are obtained from interpolation through a grid of ATLAS9 models (Castelli & Kurucz 2004). 

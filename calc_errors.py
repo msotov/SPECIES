@@ -287,7 +287,8 @@ def error_for_vt(starname, t_moog, xmet_moog, logg_mogg, vt_moog,\
 
 def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
                 debug = False, file_debug = None, save_coefs_error = False,\
-                file_coefs_error = None, make_plots_coefs_error = False):
+                file_coefs_error = None, make_plots_coefs_error = False, \
+		use_casagrande = 'no', err_T_c = None):
 
     #########################################################################
     # Write in the debug file
@@ -298,6 +299,11 @@ def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
                               (starname))
     if save_coefs_error == True:
         file_coefs_error.writelines('Error in T\n')
+
+    if use_casagrande == 'yes':
+        if debug: 
+            file_debug.debug('Error in temperature equal to error from photometry.')
+        return err_T_c, err_T_c
 
     #########################################################################
     # Error in T because of the error
@@ -576,7 +582,8 @@ def error_for_logg(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
 
 def obtain_errors(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
                   debug = False, file_debug = None, save_coefs_error = False, \
-                  file_coefs_error = None, make_plots_coefs_error = False):
+                  file_coefs_error = None, make_plots_coefs_error = False,\
+		  use_casagrande = 'no', err_T_c = None):
 
     if debug == True:
         file_debug.debug('Computation of errors.')
@@ -590,7 +597,8 @@ def obtain_errors(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
     err_T, err_T2 = error_for_T(starname, t_moog, xmet_moog, logg_moog, \
                                 vt_moog, err_vt, debug, file_debug, \
                                 save_coefs_error, file_coefs_error, \
-                                make_plots_coefs_error)
+                                make_plots_coefs_error, \
+				use_casagrande, err_T_c)
     print '\t\tError for metallicity...'
     err_met = error_for_met(starname, t_moog, xmet_moog, logg_moog, \
                             vt_moog, err_vt, err_T, debug, file_debug, \

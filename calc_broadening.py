@@ -526,7 +526,7 @@ class Vsini(object):
         self.S = self.perf(np.array([self.best_v,self.best_a]))
 
         # Trigger bad fit warning
-        if self.check > self.badfit_tol:
+        if (self.check > self.badfit_tol):
             self.badfit_status = True
 
         del MOOG
@@ -660,15 +660,15 @@ class Driver(object):
         self.observed_in = './Spectra/%s_%d.dat' % (self.name, line_number)
 
         # Output files
-        self.standard_out_moog = '../output/%s_long.out' % self.name
-        self.summary_out_moog = '../output/%s_li.out' % self.name
-        self.smoothed_out_moog = '../output/%s_smooth.out' % self.name
-        self.smoothed_out_new_moog = '../output/%s_smooth_new.out' % self.name
+        self.standard_out_moog = './output/%s_long.out' % self.name
+        self.summary_out_moog = './output/%s_li.out' % self.name
+        self.smoothed_out_moog = './output/%s_smooth.out' % self.name
+        self.smoothed_out_new_moog = './output/%s_smooth_new.out' % self.name
 
         # Input files
-        self.model_in_moog = '../atm_models/%s_v.atm' % self.name
-        self.lines_in_moog = '../MOOG_linelist/lines.%s_v.ares' % self.name
-        self.observed_in_moog = '../Spectra/%s_%d.dat' % (self.name, line_number)
+        self.model_in_moog = './atm_models/%s_v.atm' % self.name
+        self.lines_in_moog = './MOOG_linelist/lines.%s_v.ares' % self.name
+        self.observed_in_moog = './Spectra/%s_%d.dat' % (self.name, line_number)
 
         self.lines_ab = np.loadtxt(self.lines_in, usecols=(0,), skiprows=1)
 
@@ -770,7 +770,8 @@ class Driver(object):
     def change_vsini(self, grid_v):
 
         self.create_batch()
-        os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
         model = np.loadtxt(self.smoothed_out, skiprows = 2)
         synth_wl = model[:,0]
         synth_flux = model[:,1]
@@ -803,7 +804,8 @@ class Driver(object):
         self.abunds = a
 
         self.create_batch()
-        os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
         model = np.loadtxt(self.smoothed_out, skiprows = 2)
         synth_wl = model[:,0]
         synth_flux = model[:,1]
@@ -832,7 +834,8 @@ class Driver(object):
         """
         self.create_batch()
 
-        os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
+        os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
 
         self.model = np.loadtxt(self.smoothed_out, skiprows=2)
         synth_wl = self.model[:,0]
@@ -963,7 +966,8 @@ class arr_manage(object):
 def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, err_met, err_ni):
 
     vmac, err_vmac = calc_vmac((Teff, err_T), (logg, err_logg))
-    vmac += 0.382 + 0.027
+    vmac = vmac + 0.07
+    #vmac += 0.382 + 0.027
     vsini, err_vsini = calc_vsini(starname, Teff, met, logg, micro, vmac, ab_ni, err_met, err_ni)
 
     #print vmac, err_vmac, vsini, err_vsini
@@ -982,7 +986,7 @@ def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, er
         vmac_final = np.mean(vmac[i])
         err_vmac_final = np.mean(err_vmac[i])/np.sqrt(float(len(i)))
 
-        vsini_final = np.mean(vsini[i]) + 0.1 + 0.02
+        vsini_final = np.mean(vsini[i]) + 0.1 + 0.02 - 0.36
         err_vsini_final = np.sqrt(1./(1./(np.sum(err_vsini[i]**2.) + err_vmac_final**2.)))
 
     del i, vmac, err_vmac, vsini, err_vsini
@@ -1071,7 +1075,7 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
     lines3 = {'name' : 'FeI', 'wave' : 6165.36, 'Z' : 26, 'EP' : 4.143, 'loggf' : -1.46}
     lines4 = {'name' : 'FeI', 'wave' : 6705.10, 'Z' : 26, 'EP' : 4.607, 'loggf' : -0.98}
     lines5 = {'name' : 'NiI', 'wave' : 6767.77, 'Z' : 28, 'EP' : 1.826, 'loggf' : -2.17}
-    lines = (lines1, lines2, lines3, lines4, lines5)
+    lines_o = (lines1, lines2, lines3, lines4, lines5)
 
     # Create model atmosphere
     interpol(starname + '_v', Teff, logg, met, micro)
@@ -1086,11 +1090,28 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
 
     new_data = np.array([x, data]).T
 
+    resolution = None
+
+    try:
+        resolution = fits.getval('./Spectra/' + starname + '_res.fits', 'R', 0)
+    except:
+        pass
+
+
     # For each line create vsini object
     vsini_lines = np.zeros(5)
     err_vsini_lines = np.zeros(5)
     ab_keys = map(float,lines_ab.keys())
     data_lines = {}
+
+    available_lines = np.loadtxt(line_file, skiprows=1, usecols=(0))
+
+    lines = []
+    for l in lines_o:
+        if l['wave'] in available_lines:
+            lines.append(l)
+
+
     for l in range(len(lines)):
 
         data_o = new_data
@@ -1119,7 +1140,7 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
 
                 new_y_l = continuum_det(x_l, y_l)
 
-                popt,_ = curve_fit(f_total, x_l, y_l, p0 = (-max(y_l)/min(y_l), w, 0.2, 0.0, max(y_l)))
+                popt,_ = curve_fit(f_total, x_l, new_y_l, p0 = (-max(y_l)/min(y_l), w, 0.2, 0.0, max(y_l)))
                 #print w, popt[1]
                 if popt[1] > (w + 0.3) or popt[1] < (w - 0.3):
                     x_shift = 0.0
@@ -1175,25 +1196,30 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
             #del j, x_l, y_l, popt, y_polinomial, x_shift, new_x_l, new_y_l, new_y_l1, popt2, y_polinomial2
             del j, x_l, y_l, popt, new_x_l, new_y_l
 
-            if inst == 'harps':
-                gauss = w/115000.# 2.*np.sqrt(2.*np.log(2.))*w/120000.
-            elif inst == 'feros' or inst == 'feros_o':
-                gauss = w/48000.
-            elif inst == 'uves':
-                gauss = w/110000.
-            elif inst == 'hires':
-                gauss = w/67000.
-            elif inst == 'coralie':
-                gauss = w/60000.
+            if resolution is None:
+
+                if inst == 'harps':
+                    gauss = w/115000.# 2.*np.sqrt(2.*np.log(2.))*w/120000.
+                elif inst == 'feros' or inst == 'feros_o':
+                    gauss = w/48000.
+                elif inst == 'uves':
+                    gauss = w/110000.
+                elif inst == 'hires':
+                    gauss = w/67000.
+                elif inst == 'coralie':
+                    gauss = w/60000.
+                else:
+                    gauss = w/60000.
+
             else:
-                gauss = w/60000.
+                gauss = w/float(resolution)
 
             spec_window = np.array([w-1.0, w+1.0])
             vrot = Vsini(spec_window, gauss, v_macro[l], line_file, l, SN, **kwargs)
 
 
             kwargs2 = {'a_guess' : np.array([(lines_ab['%.3f' % w]) - 1.5*max(0.1,dev_ab['%.3f' % w]), (lines_ab['%.3f' % w]) + 1.5*max(0.1,dev_ab['%.3f' % w])]),\
-                       'v_guess' : np.array([0.5, 10.]),\
+                       'v_guess' : np.array([0.1, 10.]),\
                        'save' : True,\
                        'N' : 30,\
                        'v_low_limit' : 0.1,\
@@ -1201,8 +1227,8 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
 
 
             vrot = vrot.find(**kwargs2)
-            if vrot.best_v == kwargs2['v_low_limit']:
-                vrot.badfit_status = True
+            #if vrot.best_v <= min(vrot.v_grid):
+            #    vrot.badfit_status = True
 
             info_line['data'] = vrot.MOOG.data
             info_line['model'] = vrot.MOOG.model
@@ -1268,16 +1294,16 @@ def calc_ab(starname, Teff, met, logg, micro, ab_ni, err_met, err_ni):
         columnas = linea.strip()
         m = re.search(r'standard_out\s*(\S*).*', columnas)
         if m:
-            linea = "standard_out  '../output/%s_v.test'\n" % (starname)
+            linea = "standard_out  './output/%s_v.test'\n" % (starname)
         m = re.search(r'summary_out\s*(\S*).*', columnas)
         if m:
-            linea = "summary_out   '../output/%s_v_out.test'\n" % (starname)
+            linea = "summary_out   './output/%s_v_out.test'\n" % (starname)
         m = re.search(r'model_in\s*(\S*).*', columnas)
         if m:
-            linea = "model_in      '../atm_models/%s_v.atm'\n" % (starname)
+            linea = "model_in      './atm_models/%s_v.atm'\n" % (starname)
         m = re.search(r'lines_in\s*(\S*).*', columnas)
         if m:
-            linea = "lines_in      '../MOOG_linelist/lines.%s_v.ares'\n" % (starname)
+            linea = "lines_in      './MOOG_linelist/lines.%s_v.ares'\n" % (starname)
         par_out.writelines(linea)
     par.close()
     par_out.close()
@@ -1285,7 +1311,8 @@ def calc_ab(starname, Teff, met, logg, micro, ab_ni, err_met, err_ni):
     cmd = 'cp ./MOOGFEB2017/abfind_%s_v_2.par ./MOOGFEB2017/abfind_%s_v.par' % (starname, starname)
     os.system(cmd)
 
-    os.system('bash run_moog_abfind.bash abfind_%s_v.par' % starname)
+    #os.system('bash run_moog_abfind.bash abfind_%s_v.par' % starname)
+    os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/abfind_%s_v.par\n\nEOF' % starname)
 
     output = open('./output/' + starname + '_v_out.test')
 

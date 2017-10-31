@@ -11,8 +11,7 @@ from astropy.table import Table, Column
 from scipy.optimize import curve_fit
 from scipy.interpolate import UnivariateSpline
 from find_mass import find_mass_age as find_mass_age
-from check_relation import check_relation, correct_casagrande,\
-                           vizier_params
+import photometric_relations as pr
 from calc_errors import obtain_errors
 from interpol_function import interpol
 from scipy.stats import sigmaclip
@@ -29,6 +28,10 @@ import calc_broadening as cb
 #******************************************************************************
 #******************************************************************************
 
+#def multi_run_wrapper(args):
+#    return run_iteration(*args)
+
+
 def multi_run_wrapper(args):
     try:
 
@@ -36,7 +39,8 @@ def multi_run_wrapper(args):
         #timeout = Timeout(60*minutes)
         #timeout.start()
         return run_iteration(*args)
-    except:
+    except Exception as e:
+        print e
         return (args[0], 0.0, 0.0, 0.0, 0.0, 2, 0, 0, 0.0, 0.0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
@@ -44,7 +48,7 @@ def multi_run_wrapper(args):
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 2, 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
-                0.0, 0.0, 0.0, 0.0, 'no')
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 'no', 'no')
 
 
 #******************************************************************************
@@ -71,7 +75,7 @@ def nlines(starname):
     ew_b = file_ew['ew']
     ew_err_b = file_ew['ew_err']
 
-    i = np.where((ew_b >= 10.) & (ew_b <= 150.))[0]
+    i = np.where((ew_b >= 10.) & (ew_b <= 150.) & (ew_err_b/ew_b <= 2.0))[0]
     line_ew_o = line_ew_b[i]
     ew_o = ew_b[i]
     ew_err_o = ew_err_b[i]
@@ -187,8 +191,6 @@ def compute_average_abundance(starname, w = False):
 #******************************************************************************
 
 
-
-
 def runMOOG(atmos_params):
     starname = atmos_params['star']
     T = atmos_params['temperature']['value']
@@ -196,12 +198,72 @@ def runMOOG(atmos_params):
     m = atmos_params['metallicity']['value']
     vt = atmos_params['velocity']['value']
     interpol(starname, T, g, m, vt)
-    cmd = 'bash run_moog.bash abfind_%s.par' % starname
+    #cmd = 'bash run_moog.bash abfind_%s.par' % starname
+    cmd = 'MOOGSILENT > temp.log 2>&1 <<EOF\nMOOGFEB2017/ab_%s.par\n\nEOF' % starname
     os.system(cmd)
     ab, ep, dif, rw, nfailed = compute_average_abundance(starname, w = False)
     ab = ab - 7.50
     return ab, ep, dif, rw, nfailed
 
+
+#******************************************************************************
+#******************************************************************************
+#******************************************************************************
+#******************************************************************************
+
+
+def create_linelist(file_star, ab = False):
+    if ab:
+        file_linelist = 'Spectra/lines_ab.dat'
+    else:
+        file_linelist = 'Spectra/linelist.dat'
+
+    linelist = np.genfromtxt(file_linelist, dtype = None, skip_header = 2,\
+                             names = ('line', 'excit', 'loggf', 'num', 'ion'))
+    line = linelist['line']
+    if ab:
+        line = np.array([round(l,2) for l in line])
+    excit = linelist['excit']
+    loggf = linelist['loggf']
+    num = linelist['num']
+    ion = linelist['ion']
+
+    file_ew = np.genfromtxt('./EW/' + file_star, dtype = None, usecols = (0, 4, 5),\
+                            names = ('line', 'ew', 'ew_err'))
+    line_ew_b = file_ew['line']
+    ew_b = file_ew['ew']
+    ew_err_b = file_ew['ew_err']
+
+    #Take only the lines that 10. <= EW <=150 and the error in the EW is lower than the EW
+    ilines = np.where((ew_b >= 10.) & (ew_b <= 150.) & (ew_err_b/ew_b <= 2.0))[0]
+    line_ew = line_ew_b[ilines]
+    ew = ew_b[ilines]
+    ew_err = ew_err_b[ilines]
+
+    if ab == False:
+
+        div = ew_err/ew
+        indices = np.where(div <=1.)[0]
+        line_ew = line_ew[indices]
+        ew = ew[indices]
+        ew_err = ew_err[indices]
+
+        del indices
+
+    output = open('MOOG_linelist/lines.' + file_star, 'w')
+    output.writelines(' %s\n' % file_star)
+
+    for i in range(len(line_ew)):
+        index = np.where(line == line_ew[i])[0]
+        if len(index) == 1:
+            index = int(index[0])
+            output.writelines('  %7.2f    %4.1f       %5.2f     %6.3f                       %7.4f\n' %\
+                              (line[index], ion[index], excit[index], loggf[index], ew[i]))
+
+    output.close()
+
+    del linelist, line, excit, loggf, num, ion, file_ew, line_ew_b, ew_b, ew_err_b,\
+        ilines, line_ew, ew, ew_err
 
 
 #******************************************************************************
@@ -581,6 +643,8 @@ def calc_params(star, hold, init_vals, debug, log_f = None,\
                            a.atmos_params[name_p]['boundaries'][1])
     a.write_debug_message(line_hold_param[:-2])
     del line_hold_param, names_params
+    a.write_debug_message('Initial values are: T=%f, logg=%f, met=%f, vt=%f' % \
+                          (init_vals[0], init_vals[1], init_vals[2], init_vals[3]))
 
     #########################################################################
     # Modifies the output from MOOG if hold metallicity is 'yes'
@@ -591,7 +655,6 @@ def calc_params(star, hold, init_vals, debug, log_f = None,\
     #########################################################################
     # First iteration with MOOG.
     #########################################################################
-
 
     ab, ep, dif, rw, nfailed = runMOOG(a.atmos_params)
 
@@ -720,7 +783,8 @@ def run_iteration(starlist,\
                   file_with_coords = None,\
                   set_boundaries = False,\
                   file_with_boundaries = None,
-                  mass_from_file = False):
+                  mass_from_file = False,
+                  try_with_vt_hold = False):
     """
     Run the iteration from a list of stars between the indices nini and nfin.
 
@@ -774,7 +838,17 @@ def run_iteration(starlist,\
     #########################################################################
 
     star = starlist
-    star_name = star[:star.index('_')]
+    star_name = star
+    inst = 'nofound'
+    #star_name = star[:star.index('_')]
+    indices = [indx for indx, c in enumerate(star) if '_' == c]
+    if len(indices) > 0:
+        inst = star[indices[-1]+1:]
+        if inst == 'o':
+            inst = star[indices[-2]+1:]
+            star_name = star[:indices[-2]]
+        else:
+            star_name = star[:indices[-1]]
 
 
     #########################################################################
@@ -804,6 +878,173 @@ def run_iteration(starlist,\
 
 
     #########################################################################
+    # Obtain photometric information
+    #########################################################################
+
+    photometry = {}
+    in_file = False
+
+    if use_coords:
+        if file_with_coords == None:
+            file_with_coords = 'any_name.txt'
+        if os.path.isfile(file_with_coords):
+            star_coords = ascii.read(file_with_coords)
+            if star_name in star_coords['Starname']:
+                in_file = True
+                icoords = int(np.where(star_coords['Starname'] == star_name)[0])
+                star_ra = star_coords['RA'][icoords]
+                star_dec = star_coords['DEC'][icoords]
+                photometry = pr.vizier_params(star_name, use_coords = True, \
+                                           RA = star_ra, DEC = star_dec)
+
+            else:
+                h = fits.getheader('Spectra/' + star + '.fits', 0)
+                try:
+                    star_ra = h['RA']
+                    star_dec = h['DEC']
+                    in_file = True
+                    photometry = pr.vizier_params(star_name, use_coords = True, \
+                                               RA = star_ra, DEC = star_dec)
+                except KeyError:
+                    pass
+                del h
+
+            del star_coords
+
+        else:
+            h = fits.getheader('Spectra/' + star + '.fits', 0)
+            try:
+                star_ra = h['RA']
+                star_dec = h['DEC']
+                in_file = True
+                photometry = pr.vizier_params(star_name, use_coords = True, \
+                                           RA = star_ra, DEC = star_dec)
+            except KeyError:
+                pass
+
+            del h
+
+
+    if (use_coords == False) or (in_file == False):
+
+        if debug:
+            log_f.debug('Attempting to find colors for ' + star)
+        photometry = pr.vizier_params(star_name)
+        photo_keys = photometry.keys()
+        if len(photo_keys) == 1 or (len(photo_keys) == 3 and ('RA' in photo_keys) and ('DEC' in photo_keys)):
+            try:
+                new_name = fits.getval('./Spectra/' + star + '.fits', 'HIP_ID', 0)
+                if new_name == '':
+                    new_name = fits.getval('./Spectra/' + star + '.fits', 'OBJECT', 0)
+                if debug:
+                    log_f.debug('Attempting to find colors for ' + new_name)
+                photometry = pr.vizier_params(new_name)
+            except Exception as e:
+                #print "Unexpected error:", sys.exc_info()[0]
+                #print e
+                pass
+
+
+
+    if colors_from_file == True:
+        is_file = False
+        in_file = False
+
+        if name_file_colors == None:
+            name_file_colors = 'any_name.txt'
+
+        if os.path.isfile(name_file_colors):
+            vals_magnitudes = np.genfromtxt(name_file_colors, dtype = None,
+                                            names = True)
+
+            color_names = vals_magnitudes['Starname']
+            if star_name in color_names:
+                in_file = True
+                imag = int(np.where(color_names == star_name)[0])
+
+                for mag in ['B', 'V', 'R', 'I', 'J', 'H', 'K', 'Bt', 'Vt', 'b', 'y']:
+                    try:
+                        value_mag = vals_magnitudes[mag][imag]
+                    except IndexError:
+                        value_mag = vals_magnitudes[mag]
+                    if value_mag != 'no':
+                        photometry[mag] = [float(value_mag), 0.01, 'Given by user', 5500, 0.0]
+
+                if debug:
+                    log_f.debug('Obtaining colors from file.')
+
+            del vals_magnitudes, color_names
+
+    else:
+        if debug:
+            log_f.debug('Using colors only from Vizier.')
+
+
+    if debug:
+        log_f.debug('Photometry information is: %s', photometry)
+
+    #print photometry
+
+    #########################################################################
+    # Derive initial conditions from photometry
+    #########################################################################
+
+    # Stellar class:
+    sp_class = pr.stellar_class(photometry)
+    if debug:
+        log_f.debug('Luminosity class is %s, from photometry.', sp_class)
+
+    # Initial metallicity:
+    ini_met = pr.ini_met(photometry)
+    if debug:
+        log_f.debug('Initial metallicity is %f', ini_met)
+
+    # Initial temperature:
+    if sp_class == 'dwarf':
+        T_c, err_T_c, color_c, relation = pr.check_relation(photometry, ini_met, 1)
+        if T_c != 0.0:
+            if relation == 'casagrande':
+                T_c = pr.correct_casagrande(T_c, color_c, inst)
+                if debug:
+                    log_f.debug('Temperature using the Casagrande et al. 2010 formula is %f +- %f, using %s',\
+                                T_c, err_T_c, color_c)
+            else:
+                if debug:
+                    log_f.debug('Temperature using the Mann et al. 2015 formula is %f +- %f, using %s',\
+                                T_c, err_T_c, color_c)
+
+        else:
+            T_c, err_T_c = pr.mamajek(photometry)
+            if T_c != 0.0:
+                if debug:
+                    log_f.debug('Temperature using the Mamajek table is %f +- %f', T_c, err_T_c)
+
+    else:
+        T_c, err_T_c = pr.gonzalez_hernandez(photometry, ini_met)
+        if T_c != 0.0:
+            if debug:
+                log_f.debug('Temperature using Gonzalez-Hernandez and Bonifacio 2009 is %f +- %f', T_c, err_T_c)
+
+    if T_c != 0.0:
+
+        # Initial logg
+        ini_logg = pr.ini_logg(T_c, sp_class)
+        ini_logg = min(ini_logg, 4.8)
+        if debug:
+            log_f.debug('Initial logg is %f', ini_logg)
+
+
+        init_vals = [T_c, ini_logg, ini_met, 1.23]
+
+    else:
+        if debug:
+            log_f.debug('No valid temperature from photometry was computed. '\
+                        'Check the photometric information of your star')
+
+        init_vals = [5500., 4.36, 0.0, 1.23]
+
+
+    #########################################################################
     # Finds the hold parameters and initial values.
     # (used only if hold_params = True)
     #########################################################################
@@ -828,21 +1069,20 @@ def run_iteration(starlist,\
             err_vmac_params = arch_params['err_vmac']
             del arch_params
 
-            if (star in stars_params) == False:
-                hold = []
-                init_vals = [5500., 4.36, 0.0, 1.23]
-            else:
-                try:
-                    i = int(np.where(stars_params == star)[0])
-                except TypeError:
-                    i = int(np.where(stars_params == star)[0][0])
 
-                if hold_par[i] == 'no': hold = []
+            if star_name in stars_params:
+                try:
+                    i = int(np.where(stars_params == star_name)[0])
+                except TypeError:
+                    i = int(np.where(stars_params == star_name)[0][0])
+
+
+                if hold_par[i] == 'no': 
+                    hold = []
                 else:
                     hold = hold_par[i].split(',')
 
 
-                init_vals = [5500., 4.36, 0.0, 1.23]
                 if T_params[i] != 'no': init_vals[0] = float(T_params[i])
                 if logg_params[i] != 'no': init_vals[1] = float(logg_params[i])
                 if met_params[i] != 'no': init_vals[2] = float(met_params[i])
@@ -860,6 +1100,9 @@ def run_iteration(starlist,\
                 except ValueError:
                     pass
 
+            else:
+                hold = []
+
             del T_params, logg_params, met_params, micro_params, hold_par,\
                 stars_params, vbroad_params, err_vbroad_params,\
                 vsini_params, err_vsini_params, vmac_params, err_vmac_params
@@ -867,12 +1110,11 @@ def run_iteration(starlist,\
 
         except IOError:
             hold = []
-            init_vals = [5500., 4.36, 0.0, 1.23]
 
     else:
         file_params = 'random_file.txt'
         hold = []
-        init_vals = [5500., 4.36, 0.0, 1.23]
+
 
 
 
@@ -971,17 +1213,19 @@ def run_iteration(starlist,\
     # Creates the EW file needed by MOOG.
     #########################################################################
 
-    os.system('bash moog_linelist.bash ' + star + '.ares ')
+    #os.system('bash moog_linelist.bash ' + star + '.ares ')
+    create_linelist(star + '.ares')
+    nFeI, nFeII = nlines(star)
 
     #########################################################################
     # Modify abfind.par
     #########################################################################
 
 
-    cmd = 'cp ./MOOGFEB2017/abfind.par ./MOOGFEB2017/abfind_%s.par' % (star)
+    cmd = 'cp ./MOOGFEB2017/abfind.par ./MOOGFEB2017/ab_%s.par' % (star)
     os.system(cmd)
 
-    par_out = open('./MOOGFEB2017/abfind_%s_2.par' % (star), 'w')
+    par_out = open('./MOOGFEB2017/ab_%s_2.par' % (star), 'w')
     par_out.writelines("abfind\n")
     par_out.writelines("terminal    null\n")
     par_out.writelines("atmosphere  1\n")
@@ -991,19 +1235,21 @@ def run_iteration(starlist,\
     par_out.writelines("plot        1\n")
     par_out.writelines("damping     2\n")
     par_out.writelines("units       0\n")
-    par_out.writelines("standard_out  '../output/%s.test'\n" % (star))
-    par_out.writelines("summary_out   '../output/%s_out.test'\n" % (star))
-    par_out.writelines("model_in      '../atm_models/%s.atm'\n" % (star))
-    par_out.writelines("lines_in      '../MOOG_linelist/lines.%s.ares'\n" % (star))
+    par_out.writelines("standard_out  './output/%s.test'\n" % (star))
+    par_out.writelines("summary_out   './output/%s_out.test'\n" % (star))
+    par_out.writelines("model_in      './atm_models/%s.atm'\n" % (star))
+    par_out.writelines("lines_in      './MOOG_linelist/lines.%s.ares'\n" % (star))
 
     par_out.close()
 
-    cmd = 'cp ./MOOGFEB2017/abfind_%s_2.par ./MOOGFEB2017/abfind_%s.par' % (star, star)
+    cmd = 'cp ./MOOGFEB2017/ab_%s_2.par ./MOOGFEB2017/ab_%s.par' % (star, star)
     os.system(cmd)
+
 
     #########################################################################
     # Computes the temperature, logg, metallicity and microturbulence
     #########################################################################
+    use_vt = 'no'
 
 
     T, logg, xmetal, micro, exception = calc_params(star, hold, init_vals, \
@@ -1011,16 +1257,31 @@ def run_iteration(starlist,\
                                                     set_boundaries, \
                                                     vals_boundaries)
 
+    if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold) == False) \
+            and (nFeI > 10):
+        hold_c1 = hold[:]
+        init_vals_c1 = init_vals[:]
+        hold_c1.append('velocity')
+        init_vals_c1[3] = 1.2
+        if debug:
+            log_f.debug('Trying again with vt = 1.2 km/s.')
+        T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c1, init_vals_c1, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
+        use_vt = 'yes'
+
     # Apply correction for solar values
 
     if ('temperature' in hold) == False:
-        T = T + 19.16
+        T = T + 26
     if ('metallicity' in hold) == False:
         xmetal = xmetal + 0.02
     if ('pressure' in hold) == False:
-        logg = logg + 0.05
+        logg = logg + 0.06
     if ('velocity' in hold) == False:
-        micro = micro + 0.074#0.286762
+        micro = micro + 0.08
 
 
     if debug:
@@ -1029,97 +1290,6 @@ def run_iteration(starlist,\
                     T, logg, xmetal, micro)
 
 
-    #########################################################################
-    # Creates the photometry dictionary, which will hold the star's colors.
-    # They can be retrieved from several catalogues from Vizier, using its
-    # name or coordinates, or can be read from a file.
-    #########################################################################
-
-    photometry = {}
-    in_file = False
-
-    if use_coords:
-        if file_with_coords == None:
-            file_with_coords = 'any_name.txt'
-        if os.path.isfile(file_with_coords):
-            star_coords = ascii.read(file_with_coords)
-            if star_name in star_coords['Starname']:
-                in_file = True
-                icoords = int(np.where(star_coords['Starname'] == star_name)[0])
-                star_ra = star_coords['RA'][icoords]
-                star_dec = star_coords['DEC'][icoords]
-                photometry = vizier_params(star_name, use_coords = True, \
-                                           RA = star_ra, DEC = star_dec)
-
-            else:
-                hdu = fits.open('Spectra/' + star + '.fits')
-                h = hdu[0].header
-                try:
-                    star_ra = h['RA']
-                    star_dec = h['DEC']
-                    in_file = True
-                    photometry = vizier_params(star_name, use_coords = True, \
-                                               RA = star_ra, DEC = star_dec)
-                except KeyError:
-                    pass
-                hdu.close()
-                del hdu, h
-
-            del star_coords
-
-        else:
-            hdu = fits.open('Spectra/' + star + '.fits')
-            h = hdu[0].header
-            try:
-                star_ra = h['RA']
-                star_dec = h['DEC']
-                in_file = True
-                photometry = vizier_params(star_name, use_coords = True, \
-                                           RA = star_ra, DEC = star_dec)
-            except KeyError:
-                pass
-
-            hdu.close()
-            del hdu, h
-
-
-    if (use_coords == False) or (in_file == False):
-
-        photometry = vizier_params(star_name)
-
-    if colors_from_file == True:
-        is_file = False
-        in_file = False
-
-        if name_file_colors == None:
-            name_file_colors = 'any_name.txt'
-
-        if os.path.isfile(name_file_colors):
-            vals_magnitudes = np.genfromtxt(name_file_colors, dtype = None,
-                                            names = True)
-
-            color_names = vals_magnitudes['Starname']
-            if star_name in color_names:
-                in_file = True
-                imag = int(np.where(color_names == star_name)[0])
-
-                for mag in ['B', 'V', 'R', 'I', 'J', 'H', 'K', 'Bt', 'Vt', 'b', 'y']:
-                    try:
-                        value_mag = vals_magnitudes[mag][imag]
-                    except IndexError:
-                        value_mag = vals_magnitudes[mag]
-                    if value_mag != 'no':
-                        photometry[mag] = (float(value_mag), 0.01)
-
-                if debug:
-                    log_f.debug('Obtaining colors from file.')
-
-            del vals_magnitudes, color_names
-
-    else:
-        if debug:
-            log_f.debug('Using colors only from Vizier.')
-
 
     #########################################################################
     # Computes the temperature using the relations in Casagrande et al. 2010.
@@ -1127,66 +1297,73 @@ def run_iteration(starlist,\
     # but fixing the temperature to the one from Casagrande et al. 2010.
     #########################################################################
 
-
     use_casagrande = 'no'
 
     if check_with_casagrande == True:
-        T_c, color_c, relation = check_relation(photometry, xmetal, exception)
+        if abs(T_c - T) > 200. or (exception == 2):
+            if T_c > 3000. and T_c < 10000.:
+                use_casagrande = 'yes'
 
-        if T_c != 0.0:
+                hold_c = hold[:]
+                hold_c.append('temperature')
+                init_vals_c = init_vals[:]
+                init_vals_c[0] = T_c
+                if debug == True:
+                    log_f.debug('Difference between T_c and T is larger than 500 K '\
+                                'or exception is equal to two.')
+                    log_f.debug('Computing the parameters again but using T_c.')
 
-            #T_c = np.mean(T_c)
-            ###########################################
-            # Apply the correction for Tc
-            ###########################################
-            if relation == 'casagrande':
-                inst = star[star.index('_')+1:]
-                #T_c = correct_casagrande(T_c, color_c, inst)
+                T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c, init_vals_c, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
 
-            ###########################################
+                use_vt = 'no'
 
-            print '\t\tT_c is ' + str(T_c)
-            if debug == True:
-                if relation == 'casagrande':
-                    log_f.debug('Temperature using the Casagrande et al. 2010 formula is %f',\
-                                T_c)
-                else:
-                    log_f.debug('Temperature using the Mann et al. 2015 formula is %f',\
-                                T_c)
+                if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold_c) == False) \
+                    and (nFeI > 10):
+                    hold_c.append('velocity')
+                    init_vals_c[3] = 1.2
+                    if debug:
+                        log_f.debug('Trying again with vt = 1.2 km/s.')
+                        T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c, init_vals_c, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
+                        use_vt = 'yes'
 
-                line_colors = photometry.copy()
-                line_colors.pop('name', photometry)
-                log_f.debug('Colors used were: %s', line_colors)
-                del line_colors
+                #Apply correction for solar values
+
+                if ('temperature' in hold_c) == False:
+                    T = T + 26
+                if ('metallicity' in hold_c) == False:
+                    xmetal = xmetal + 0.02
+                if ('pressure' in hold_c) == False:
+                    logg = logg + 0.06
+                if ('velocity' in hold_c) == False:
+                    micro = micro + 0.08
+
+                if debug:
+                    log_f.debug('Values after correcting for the Sun are: '\
+                                'T=%f, logg=%f, xmetal=%f, micro = %f',\
+                                 T, logg, xmetal, micro)
 
 
-            if abs(T_c - T)>500. or (exception == 2):
-                if T_c > 3500. and T_c < 10000.:
-                    use_casagrande = 'yes'
-
-                    hold_c = hold#['temperature']
-                    hold_c.append('temperature')
-                    init_vals_c = init_vals
-                    init_vals_c[0] = T_c
-                    if debug == True:
-                        log_f.debug('Difference between T_c and T is larger than 500 K '\
-                                    'or exception is equal to two.')
-                        log_f.debug('Computing the parameters again but using T_c.')
-
-                    T, logg, xmetal, micro, exception = calc_params(star, \
-                                                        hold_c, init_vals_c, \
-                                                        debug, log_f, \
-                                                        set_boundaries,\
-                                                        vals_boundaries)
-
-                else:
-                    if debug == True:
-                        log_f.debug('Temperature outside of the permitted ranges. '\
-                                    'Stopping the calculation.')
+            else:
+                if debug == True:
+                    log_f.debug('Temperature from photometry outside of the permitted ranges. '\
+                                'Stopping the calculation.')
 
         else:
             if debug == True:
-                log_f.debug('No valid colors were found.')
+                #log_f.debug('Temperature from photometry could not be properly computed. '\
+                #            'Check star name or coordinates.')
+                log_f.debug('There is agreement between the obtained temperature and from photometry.')
+
+
+
 
 
     #########################################################################
@@ -1197,13 +1374,13 @@ def run_iteration(starlist,\
 
     if use_casagrande == 'yes':
 
-        nFeI, nFeII = nlines(star)
+        #nFeI, nFeII = nlines(star)
         ab_FeI = ab_FeI - 7.50
         ab_FeII = ab_FeI - dif
 
     else:
 
-        nFeI, nFeII = nlines(star)
+        #nFeI, nFeII = nlines(star)
         ab_FeI = ab_FeI - 7.50 + 0.02
         ab_FeII = ab_FeI - dif
 
@@ -1219,18 +1396,18 @@ def run_iteration(starlist,\
         # Values obtained after running the code using solar spectra,
         # and computing the average values using the code solar_values.py
 
-        ab_NaI = ab_NaI + 0.02# - 0.0013# + 0.006581# - 0.005758# - 0.122906
-        ab_MgI = ab_MgI - 0.045# - 0.0967# - 0.089663# - 0.107898# - 0.108615
-        ab_AlI = ab_AlI + 0.2# + 0.1381# + 0.142253# + 0.128669# + 0.126753
-        ab_SiI = ab_SiI + 0.06# - 0.00099# + 0.013662# + 0.001315# - 0.037059
-        ab_CaI = ab_CaI + 0.09# + 0.04698# + 0.089034# + 0.026256# - 0.419256
-        ab_TiI = ab_TiI + 0.01# - 0.02628# + 0.021959# - 0.035669# - 0.559198
-        ab_TiII = ab_TiII + 0.01# - 0.02628# + 0.021959# - 0.035669# - 0.559198
-        ab_CrI = ab_CrI + 0.06# + 0.01807# + 0.030240# - 0.000264# - 0.966430
-        ab_MnI = ab_MnI - 0.009# - 0.05832# - 0.030791# - 0.073624# - 1.415775
-        ab_NiI = ab_NiI - 0.02# - 0.05816# - 0.019694# - 0.074541# - 0.058518
-        ab_CuI = ab_CuI - 0.14# - 0.19534# - 0.160868# - 0.211580# - 0.215754
-        ab_ZnI = ab_ZnI - 0.1# - 0.13524# - 0.116607# - 0.141556# - 0.139716
+        ab_NaI = ab_NaI + 0.01
+        ab_MgI = ab_MgI - 0.068
+        ab_AlI = ab_AlI + 0.17
+        ab_SiI = ab_SiI + 0.04
+        ab_CaI = ab_CaI + 0.09
+        ab_TiI = ab_TiI + 0.009
+        ab_TiII = ab_TiII + 0.009
+        ab_CrI = ab_CrI + 0.05
+        ab_MnI = ab_MnI - 0.03
+        ab_NiI = ab_NiI - 0.03
+        ab_CuI = ab_CuI - 0.16
+        ab_ZnI = ab_ZnI - 0.086
 
     #########################################################################
     # Compute uncertainties for the atmospheric parameters
@@ -1252,7 +1429,7 @@ def run_iteration(starlist,\
                                           debug, log_f,\
                                           save_coefs_error,\
                                           file_coefs_error,\
-                                          make_plots_coefs_error)
+                                          make_plots_coefs_error, use_casagrande, err_T_c)
 
         if err_vt > 10.:
             err_vt = 10.
@@ -1279,21 +1456,6 @@ def run_iteration(starlist,\
 
     if hold_broad == 0:
 
-        #if T < 4000.: mask = 'M2'
-        #elif (4000 <= T < 4820) == True: mask = 'K5'
-        #elif (4820 <= T < 5520) == True: mask = 'K0'
-        #else: mask = 'G2'
-
-        #if make_plot_broadening == True:
-        #    if not os.path.exists('./output/plots_broadening'):
-        #        os.makedirs('./output/plots_broadening')
-
-        #broadening, error_broadening, \
-        #    vs, err_vs, vm, err_vm = calc_broadening(star, mask, \
-        #                                             make_plot_broadening, correct_broad)
-
-        #broadening, error_broadening, \
-        #    vs, err_vs, vm, err_vm = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         broadening, error_broadening = 0.0, 0.0
 
         if ab == False:
@@ -1356,18 +1518,39 @@ def run_iteration(starlist,\
 
         if exception == 1:
 
-            mass, err_mass, age, err_age, s_logg, err_s_logg = find_mass_age(star,
-                            T, logg, xmetal, err_T, err_logg, err_met, photometry,
+            photometry_mass = {}
+            mags = ['B', 'V', 'R', 'I', 'J', 'H', 'K', 'b', 'y', 'Bt', 'Vt']
+            photo_keys = photometry.keys()
+            for m in mags:
+                if m in photo_keys:
+                    c = photometry[m][0] - photometry[m][4]
+                    photometry_mass[m] = (c, max(photometry[m][1], 0.01))
+
+            if 'parallax' in photo_keys:
+                photometry_mass['parallax'] = (photometry['parallax'][0].value, \
+                                               photometry['parallax'][1].value)
+
+            if debug:
+                log_f.debug('Values used for finding mass and age are: '\
+                            '%s, %f, %f, %f, %f, %f, %f',\
+			    star, T, logg, xmetal, err_T, err_logg, err_met)
+		log_f.debug('Photometry used is: %s', photometry_mass)
+
+
+            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius = find_mass_age(star,
+                            T, logg, xmetal, err_T, err_logg, err_met, photometry_mass,
                             mass_from_file = mass_from_file)
 
+            del photometry_mass
+
         else:
-            mass, err_mass, age, err_age, s_logg, err_s_logg = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             if debug:
                 log_f.debug('Stopping the calculation because exception = 2.')
 
     if debug == True:
-        log_f.debug('Obtained M=%f +/- %f, Age=%f +/- %f, logg=%f +/- %f',\
-                    mass, err_mass, age, err_age, s_logg, err_s_logg)
+        log_f.debug('Obtained M=%f +/- %f, Age=%f +/- %f, logg=%f +/- %f, radius=%f +/- %f',\
+                    mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius)
 
         log_f.debug('Finished with star %s', star)
 
@@ -1377,7 +1560,7 @@ def run_iteration(starlist,\
     # Deleted all the files that won't be used anymore.
     #########################################################################
 
-    cmd = 'rm -f ./MOOGFEB2017/abfind_%s.par ./MOOGFEB2017/abfind_%s_2.par' % (star, star)
+    cmd = 'rm -f ./MOOGFEB2017/ab_%s.par ./MOOGFEB2017/ab_%s_2.par' % (star, star)
     os.system(cmd)
     cmd = 'rm -f ./atm_models/%s.atm' % (star)
     os.system(cmd)
@@ -1389,7 +1572,7 @@ def run_iteration(starlist,\
     os.system(cmd)
 
     if ab == True:
-        cmd = 'rm -f ./MOOGFEB2017/abfind_%s_ab.par ./MOOGFEB2017/abfind_%s_ab_2.par' % (star, star)
+        cmd = 'rm -f ./MOOGFEB2017/ab_%s_ab.par ./MOOGFEB2017/ab_%s_ab_2.par' % (star, star)
         os.system(cmd)
         cmd = 'rm -f ./atm_models/%s_ab.atm' % (star)
         os.system(cmd)
@@ -1441,7 +1624,7 @@ def run_iteration(starlist,\
             ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, ab_ZnI, dev_ZnI, nZnI,\
             exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt, err_vt2,\
             vs, err_vs, vm, err_vm, mass, err_mass,\
-            age, err_age, s_logg, err_s_logg, use_casagrande)
+            age, err_age, s_logg, err_s_logg, radius, err_radius, use_casagrande, use_vt)
 
 
 
@@ -1474,36 +1657,35 @@ def calc_ab(star, T, logg, xmetal, micro):
     # Creates the EW file needed by MOOG.
     #########################################################################
 
-    os.system('bash moog_linelist_ab.bash ' + star + '_ab.ares ')
+    #os.system('bash moog_linelist_ab.bash ' + star + '_ab.ares ')
+    create_linelist(star + '_ab.ares', ab = True)
 
     #########################################################################
     # Modify abfind.par
     #########################################################################
 
-    cmd = 'cp ./MOOGFEB2017/abfind.par ./MOOGFEB2017/abfind_%s_ab.par' % (star)
+    
+    cmd = 'cp ./MOOGFEB2017/abfind.par ./MOOGFEB2017/ab_%s_ab.par' % (star)
     os.system(cmd)
 
-    par = open('./MOOGFEB2017/abfind_%s_ab.par' % (star), 'r')
-    par_out = open('./MOOGFEB2017/abfind_%s_ab_2.par' % (star), 'w')
-    for linea in par:
-        columnas = linea.strip()
-        m = re.search(r'standard_out\s*(\S*).*', columnas)
-        if m:
-            linea = "standard_out  '../output/%s_ab.test'\n" % (star)
-        m = re.search(r'summary_out\s*(\S*).*', columnas)
-        if m:
-            linea = "summary_out   '../output/%s_ab_out.test'\n" % (star)
-        m = re.search(r'model_in\s*(\S*).*', columnas)
-        if m:
-            linea = "model_in      '../atm_models/%s_ab.atm'\n" % (star)
-        m = re.search(r'lines_in\s*(\S*).*', columnas)
-        if m:
-            linea = "lines_in      '../MOOG_linelist/lines.%s_ab.ares'\n" % (star)
-        par_out.writelines(linea)
-    par.close()
+    par_out = open('./MOOGFEB2017/ab_%s_ab_2.par' % (star), 'w')
+    par_out.writelines("abfind\n")
+    par_out.writelines("terminal    null\n")
+    par_out.writelines("atmosphere  1\n")
+    par_out.writelines("molecules   1\n")
+    par_out.writelines("lines       1\n")
+    par_out.writelines("flux/int    0\n")
+    par_out.writelines("plot        1\n")
+    par_out.writelines("damping     2\n")
+    par_out.writelines("units       0\n")
+    par_out.writelines("standard_out  './output/%s_ab.test'\n" % (star))
+    par_out.writelines("summary_out   './output/%s_ab_out.test'\n" % (star))
+    par_out.writelines("model_in      './atm_models/%s_ab.atm'\n" % (star))
+    par_out.writelines("lines_in      './MOOG_linelist/lines.%s_ab.ares'\n" % (star))
+
     par_out.close()
 
-    cmd = 'cp ./MOOGFEB2017/abfind_%s_ab_2.par ./MOOGFEB2017/abfind_%s_ab.par' % (star, star)
+    cmd = 'cp ./MOOGFEB2017/ab_%s_ab_2.par ./MOOGFEB2017/ab_%s_ab.par' % (star, star)
     os.system(cmd)
 
     #########################################################################
@@ -1540,7 +1722,8 @@ def calc_ab(star, T, logg, xmetal, micro):
 def runMOOG_ab(starname, T, g, m, vt, use_w = False):
     use_w = True
     interpol(starname, T, g, m, vt)
-    cmd = 'bash run_moog_ab.bash abfind_%s.par' % starname
+    #cmd = 'bash run_moog_ab.bash abfind_%s.par' % starname
+    cmd = 'MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/ab_%s.par\n\n\n\n\n\n\n\n\n\n\n\n\n\nEOF' % starname
     os.system(cmd)
     output = open('./output/' + starname + '_out.test')
 

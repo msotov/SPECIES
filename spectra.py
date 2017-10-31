@@ -1,18 +1,8 @@
 import os, sys
-#sys.path.append("./Instruments")
-#sys.path.append("./aux_codes")
 import numpy as np
 from instruments import feros, feros_orders, harps,\
                         uves, hires, spectra_sav,\
                         coralie, aat, pfs
-#from feros import feros
-#from feros_orders import feros_orders
-#from harps import harps
-#from uves import uves
-#from hires import hires
-#from spectra_sav import spectra_sav
-#from coralie import coralie
-#from aat import aat
 
 
 #######################################################################

@@ -1,20 +1,17 @@
 import numpy as np
-import math, os, glob, time, corner
+import math, os, glob, time, corner, sys
 import matplotlib
 import matplotlib.pyplot as plt
-#from matplotlib import rcParams
-#rcParams['font.family'] = 'serif'
 from isochrones import StarModel
-from isochrones.dartmouth import Dartmouth_Isochrone
+from isochrones.mist import MIST_Isochrone
 from astropy.io import ascii
 
 
 def calc_values(starname, T, err_T, logg, err_logg, met, err_met, photometry, make_plot = True, mass_from_file = False):
     print '\t\tCreating isochrones'
-    dar = Dartmouth_Isochrone()
+    dar = MIST_Isochrone()
 
     Teff = (T, err_T)
-    #logg_s = (logg, min(err_logg,0.2))
     logg_s = (logg, err_logg)
     feh = (met, err_met)
 
@@ -24,37 +21,37 @@ def calc_values(starname, T, err_T, logg, err_logg, met, err_met, photometry, ma
 
     else:
         print '\t\tBuilding model'
+
         model  = StarModel(dar, Teff=Teff, logg=logg_s, feh=feh, **photometry)
         model.fit_multinest(overwrite=True, basename=starname+'_chains_',  verbose=False, refit = True)
 
-        model.save_hdf('./dotter_isochrones/' + starname + '_samples.h5')
+        model.save_hdf('./dotter_isochrones/' + starname + '_samples.h5', overwrite = True)
 
         print '\t\tFinished with model'
 
     mass_s = model.samples['mass_0_0']
     age_s = model.samples['age_0']
     logg_new = model.samples['logg_0_0']
+    radius_s = model.samples['radius_0_0']
 
     age_s = 10.**(age_s)/1E9
 
     # Apply offsets with the sun values
-    #mass_s = mass_s - 0.0126
-    age_s = age_s - 0.46# - 0.645# - 0.015# - 0.352
-    logg_new = logg_new + 0.01# + 0.017
-
-    #ascii.write([mass_s, age_s, logg_new], './dotter_isochrones/' + starname + '_samples.dat',
-     #           format = 'no_header')
+    age_s = age_s - 0.9
+    logg_new = logg_new + 0.02
+    radius_s = radius_s - 0.01
 
 
     mass_p = np.percentile(mass_s, [16, 50, 84])
     age_p = np.percentile(age_s, [16, 50, 84])
     logg_p = np.percentile(logg_new, [16, 50, 84])
+    radius_p = np.percentile(radius_s, [16, 50, 84])
 
     if make_plot:
-        make_cmd_dist_plots(starname, mass_s, age_s, logg_new, T, logg, met, err_T, err_logg)
-        data = np.vstack([mass_s, age_s, logg_new]).T
-        figure = corner.corner(data, labels = [r"$M$", r"age", r"$\log$g"],\
-                              truths = [mass_p[1], age_p[1], logg_p[1]])
+        make_cmd_dist_plots(starname, mass_s, age_s, logg_new, T, logg, radius_s, met, err_T, err_logg)
+        data = np.vstack([mass_s, age_s, logg_new, radius_s]).T
+        figure = corner.corner(data, labels = [r"Mass", r"Age", r"logg", r"Radius"],\
+                              truths = [mass_p[1], age_p[1], logg_p[1], radius_p[1]])
         figure.savefig('./dotter_isochrones/plots/' + starname + '_mass_age.pdf')
         plt.close('all')
 
@@ -66,12 +63,14 @@ def calc_values(starname, T, err_T, logg, err_logg, met, err_met, photometry, ma
     err_age = max(abs(age_p[0] - age_p[1]), abs(age_p[1] - age_p[2]))
     logg_photo = logg_p[1]
     err_logg_photo = max(abs(logg_p[0] - logg_p[1]), abs(logg_p[1] - logg_p[2]))
+    radius = radius_p[1]
+    err_radius = max(abs(radius_p[0] - radius_p[1]), abs(radius_p[1] - radius_p[2]))
 
     del dar, Teff, logg_s, model, mass_s, age_s, logg_new, mass_p, age_p, logg_p
 
     os.system('rm -f chains/' + starname + '_chains_*')
 
-    return mass, err_mass, age, err_age, logg_photo, err_logg_photo
+    return mass, err_mass, age, err_age, logg_photo, err_logg_photo, radius, err_radius
 
 
 
@@ -85,16 +84,16 @@ def find_mass_age(starname, T, logg, met, err_T, err_logg, err_met, photometry, 
 
     if err_T>500.: err_T = 500.
 
-    mass, err_mass, age, err_age, logg_photo, err_logg_photo =\
+    mass, err_mass, age, err_age, logg_photo, err_logg_photo, radius, err_radius =\
                 calc_values(starname, T, err_T, logg, err_logg, met, err_met,
                             photometry, make_plot = make_plot,
                             mass_from_file = mass_from_file)
 
 
-    return mass, err_mass, age, err_age, logg_photo, err_logg_photo
+    return mass, err_mass, age, err_age, logg_photo, err_logg_photo, radius, err_radius
 
 
-def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, feh, err_T, err_logg_s):
+def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, radius, feh, err_T, err_logg_s):
 
     plt.style.use(['classic'])
     fontname = 'Courier New'
@@ -104,6 +103,7 @@ def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, feh, err_T, err_lo
     mass_p = np.percentile(mass, [16, 50, 84])
     age_p = np.percentile(age, [16, 50, 84])
     logg_p = np.percentile(logg, [16, 50, 84])
+    radius_p = np.percentile(radius, [16, 50, 84])
 
     fig = plt.figure(figsize = (7,10))
     ax1 = plt.subplot2grid((9,1), (0, 0), rowspan = 3)
@@ -113,7 +113,8 @@ def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, feh, err_T, err_lo
 
     ax2.hist(mass, histtype = 'step', color = 'black', bins = 20, normed = True)
     ax3.hist(age, histtype = 'step', color = 'black', bins = 20, normed = True)
-    ax4.hist(logg, histtype = 'step', color = 'black', bins = 20, normed = True)
+    #ax4.hist(logg, histtype = 'step', color = 'black', bins = 20, normed = True)
+    ax4.hist(radius, histtype = 'step', color = 'black', bins = 20, normed = True)
 
     ax2.axvline(mass_p[0], color = 'red', ls = '--')
     ax2.axvline(mass_p[1], color = 'red', ls = '-')
@@ -123,15 +124,20 @@ def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, feh, err_T, err_lo
     ax3.axvline(age_p[1], color = 'red', ls = '-')
     ax3.axvline(age_p[2], color = 'red', ls = '--')
 
-    ax4.axvline(logg_p[0], color = 'red', ls = '--')
-    ax4.axvline(logg_p[1], color = 'red', ls = '-')
-    ax4.axvline(logg_p[2], color = 'red', ls = '--')
+    #ax4.axvline(logg_p[0], color = 'red', ls = '--')
+    #ax4.axvline(logg_p[1], color = 'red', ls = '-')
+    #ax4.axvline(logg_p[2], color = 'red', ls = '--')
+    ax4.axvline(radius_p[0], color = 'red', ls = '--')
+    ax4.axvline(radius_p[1], color = 'red', ls = '-')
+    ax4.axvline(radius_p[2], color = 'red', ls = '--')
+
 
     ax2.set_xlabel(r'Mass ($M_{\odot}$)', fontname = fontname)
     ax3.set_xlabel('Age (Gyr)', fontname = fontname)
-    ax4.set_xlabel(r'logg (cm s$^{-2}$)', fontname = fontname)
+    #ax4.set_xlabel(r'logg (cm s$^{-2}$)', fontname = fontname)
+    ax4.set_xlabel(r'Radius ($R_{\odot}$)', fontname = fontname)
 
-    dar = Dartmouth_Isochrone()
+    dar = MIST_Isochrone()
     masses = np.arange(mass_p[1] - 0.5, mass_p[1] + 0.5, 0.01)
     for m in masses:
         ev = dar.evtrack(m, feh = feh, dage = 0.02)
@@ -166,7 +172,7 @@ def make_cmd_dist_plots(starname, mass, age, logg, T, logg_s, feh, err_T, err_lo
     fig.savefig('./dotter_isochrones/plots/%s_CMD_dist.pdf' % starname)
     #fig.savefig('./dotter_isochrones/plots/%s_CMD_dist.ps' % starname)
 
-    del dar, ev, masses, fig, ax1, ax2, ax3, ax4, mass_p, age_p, logg_p
+    del dar, ev, masses, fig, ax1, ax2, ax3, ax4, mass_p, age_p, logg_p, radius_p
 
     plt.close('all')
 

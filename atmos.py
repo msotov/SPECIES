@@ -59,7 +59,7 @@ def create_atmos_params(star, hold, init_vals, debug, log_f,\
         bound_max = min(vals_boundaries['gravity'][1], 5.0)
         gravity['boundaries'] = (bound_min, bound_max)
     else:
-        gravity['boundaries'] = (3.0, 4.8)
+        gravity['boundaries'] = (0.5, 4.8)
 
 
 
@@ -95,7 +95,7 @@ def create_atmos_params(star, hold, init_vals, debug, log_f,\
         bound_max = min(vals_boundaries['velocity'][1], 5.0)
         velocity['boundaries'] = (bound_min, bound_max)
     else:
-        velocity['boundaries'] = (0.0, 2.0)
+        velocity['boundaries'] = (0.0, 5.0)
 
 
 
