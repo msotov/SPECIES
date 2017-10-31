@@ -462,7 +462,7 @@ else:
             '[Zn/H]', 'e_[Zn/H]', 'nZnI', 'exception_Fe', 'exception_Ti', \
             '[FeI/H]', '[FeII/H]', 'Mass', 'err_mass', 'Age', 'err_age', \
             'Photo_logg', 'err_photo_logg', 'Radius', 'err_radius', \
-            'use_Tc', 'use_vt', 'err_vt2', 'err_T2'],\ 
+            'use_Tc', 'use_vt', 'err_vt2', 'err_T2'],\
             dtype = ['str', 'str', 'float', 'float', 'float', 'float', \
             'float', 'float', 'float', 'float', 'int', \
             'int', 'int', 'float', 'float', 'float', 'float', \
