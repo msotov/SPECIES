@@ -1,5 +1,5 @@
 import numpy as np
-import re, math
+import re, math, os
 from scipy.interpolate import splev, splrep
 from scipy.optimize import curve_fit
 from astropy.io import ascii
@@ -114,24 +114,13 @@ def compute_average_abundance_error(starname, w = False):
 def func_lineal(x, a, b):
     return x*a + b
 
-#******************************************************************************
-#******************************************************************************
-
-
 def func_cuadratic(x, a, b, c):
     return x*x*a + b*x + c
-
-#******************************************************************************
-#******************************************************************************
 
 def piecewise_linear(p, x):
     a, b, c, x0 = p
     return np.piecewise(x, [x < x0, x >= x0], [lambda x:a*x + b, \
                         lambda x:c*(x-x0) + a*x0 + b])
-
-
-#******************************************************************************
-#******************************************************************************
 
 def piecewise_quadratic(p, x):
     a, b, c, d, x0 = p
@@ -165,9 +154,6 @@ def error_for_vt(starname, t_moog, xmet_moog, logg_mogg, vt_moog,\
         ep_feI, abund_feII = compute_average_abundance_error(starname, w = True)
 
     if len(w_feI)==0 or len(abund_feI)==0:
-        #print '\t\tNo information found in output file. '\
-        #      'Please check for next iteration. '\
-        #      'Using default value for err_vt = 0.1'
         if debug == True:
             file_debug.debug('No information found in output file. '\
                                   'Please check for next iteration. '\
@@ -287,8 +273,7 @@ def error_for_vt(starname, t_moog, xmet_moog, logg_mogg, vt_moog,\
 
 def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
                 debug = False, file_debug = None, save_coefs_error = False,\
-                file_coefs_error = None, make_plots_coefs_error = False, \
-		use_casagrande = 'no', err_T_c = None):
+                file_coefs_error = None, make_plots_coefs_error = False):
 
     #########################################################################
     # Write in the debug file
@@ -300,10 +285,6 @@ def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
     if save_coefs_error == True:
         file_coefs_error.writelines('Error in T\n')
 
-    if use_casagrande == 'yes':
-        if debug: 
-            file_debug.debug('Error in temperature equal to error from photometry.')
-        return err_T_c, err_T_c
 
     #########################################################################
     # Error in T because of the error
@@ -339,9 +320,6 @@ def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
         ep_feI, abund_feII = compute_average_abundance_error(starname, w = True)
 
     if len(ep_feI)==0 or len(abund_feI)==0:
-        #print '\t\tNo information found in output file. '\
-        #      'Please check for next iteration. '\
-        #      'Using default value for err_T = 100.0'
         if debug == True:
             file_debug.debug('No information found in output file. '\
                                   'Please check for next iteration. '\
@@ -362,7 +340,6 @@ def error_for_T(starname, t_moog, xmet_moog, logg_moog, vt_moog, err_vt,\
         s = popt[0]
 
         sigma_T_ep2_1 = (2.*c0*s + c1)**2.*(err_ep0**2.)
-        #sigma_T_ep2_2 = (err_ep0*t_moog**2./5040.)**2.
         sigma_T_ep2_2 = (s*t_moog**2./5040.)**2.*err_ep0**2.
 
         if save_coefs_error == True:
@@ -442,8 +419,6 @@ def error_for_met(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
         ep_feI, abund_feII = compute_average_abundance_error(starname, w = True)
 
     if len(abund_feI)==0:
-        #print '\t\tNo information found in output file. Please check for '\
-        #      'next iteration. Using default value for err_met = 0.2'
         if debug == True:
             file_debug.debug('No information found in output file. '\
                                   'Please check for next iteration. '\
@@ -507,8 +482,6 @@ def error_for_logg(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
         ep_feI, abund_feII = compute_average_abundance_error(starname, w = True)
 
     if len(abund_feII)==0:
-        #print '\t\tNo information found in output file. Please check for '\
-        #      'next iteration. Using default value for err_logg = 0.5'
         if debug == True:
             file_debug.debug('No information found in output file. '\
                                   'Please check for next iteration. '\
@@ -582,32 +555,64 @@ def error_for_logg(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
 
 def obtain_errors(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
                   debug = False, file_debug = None, save_coefs_error = False, \
-                  file_coefs_error = None, make_plots_coefs_error = False,\
-		  use_casagrande = 'no', err_T_c = None):
+                  make_plots_coefs_error = False, err_init_vals = None, \
+                  hold = [], use_casagrande = 'no', use_vt = 'no'):
+
 
     if debug == True:
         file_debug.debug('Computation of errors.')
 
+    if save_coefs_error == True:
+        file_coefs_error = open('./output/coeffs_error_files/%s_coefs_error.dat' % starname, 'w')
+        file_coefs_error.writelines('%s\tT=%f, logg=%f, [Fe/H]=%f, vt=%f\n' %\
+                                    (starname, t_moog, logg_moog, xmet_moog, vt_moog))
+
+    if make_plots_coefs_error == True:
+        if not os.path.exists('./output/plots_err'):
+            os.makedirs('./output/plots_err')
+
     print '\t\tError for vt...'
-    err_vt, err_vt2 = error_for_vt(starname, t_moog, xmet_moog, logg_moog, \
+    if (use_vt == 'no') and (('velocity' in hold) == False):
+        err_vt, err_vt2 = error_for_vt(starname, t_moog, xmet_moog, logg_moog, \
                                    vt_moog, debug, file_debug, \
                                    save_coefs_error, file_coefs_error, \
                                    make_plots_coefs_error)
+    else:
+        if ('velocity' in hold):
+            err_vt, err_vt2 = err_init_vals[3], err_init_vals[3]
+        else:
+            err_vt, err_vt2 = 0.1, 0.1
+
     print '\t\tError for T...'
-    err_T, err_T2 = error_for_T(starname, t_moog, xmet_moog, logg_moog, \
+    if (use_casagrande == 'no') and (('temperature' in hold) == False):
+        err_T, err_T2 = error_for_T(starname, t_moog, xmet_moog, logg_moog, \
                                 vt_moog, err_vt, debug, file_debug, \
                                 save_coefs_error, file_coefs_error, \
-                                make_plots_coefs_error, \
-				use_casagrande, err_T_c)
+                                make_plots_coefs_error)
+    else:
+        err_T, err_T2 = err_init_vals[0], err_init_vals[0]
+
+
     print '\t\tError for metallicity...'
-    err_met = error_for_met(starname, t_moog, xmet_moog, logg_moog, \
+    if ('metallicity' in hold) == False:
+        err_met = error_for_met(starname, t_moog, xmet_moog, logg_moog, \
                             vt_moog, err_vt, err_T, debug, file_debug, \
                             save_coefs_error, file_coefs_error, \
                             make_plots_coefs_error)
+    else:
+        err_met = err_init_vals[2]
+
     print '\t\tError for logg...'
-    err_logg = error_for_logg(starname, t_moog, xmet_moog, logg_moog, \
+    if ('pressure' in hold) == False:
+        err_logg = error_for_logg(starname, t_moog, xmet_moog, logg_moog, \
                               vt_moog, err_T, debug, file_debug, \
                               save_coefs_error, file_coefs_error, \
                               make_plots_coefs_error)
+    else:
+        err_logg = err_init_vals[1]
 
-    return err_vt, err_vt2, err_T, err_T2, err_met, err_logg
+    if save_coefs_error:
+        file_coefs_error.close()
+
+    return min(err_vt,10.), min(err_vt2,10.), min(err_T,300.), min(err_T2,300.),\
+           min(err_met,5.), min(err_logg,5.)

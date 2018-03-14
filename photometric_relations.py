@@ -10,13 +10,17 @@ from uncertainties import ufloat
 
 
 def search_catalog_name(starname, vizier_object, catalog_list, catalog_name):
-    result = vizier_object.query_object(starname, catalog = [catalog_name], radius = 10.*u.arcsec)
+    result = vizier_object.query_object(starname, catalog = [catalog_name], radius = 5.*u.arcsec)
     if str(result) != 'Empty TableList':
         catalog_list.append(result)
     else:
-        result = vizier_object.query_object(starname, catalog = [catalog_name], radius = 20.*u.arcsec)
+        result = vizier_object.query_object(starname, catalog = [catalog_name], radius = 10.*u.arcsec)
         if str(result) != 'Empty TableList':
             catalog_list.append(result)
+        else:
+            result = vizier_object.query_object(starname, catalog = [catalog_name], radius = 20.*u.arcsec)
+	    if str(result) != 'Empty TableList':
+                catalog_list.append(result)
 
     return catalog_list
 
@@ -49,7 +53,6 @@ def retrieve_catalogs(starname, vizier_object, use_coords = False, RA = None, DE
         result = search_catalog_coords(RA, DEC, vizier_object, result, "J/MNRAS/403/1949/ubvri")
         result = search_catalog_coords(RA, DEC, vizier_object, result, "I/337/tgas")
         result = search_catalog_coords(RA, DEC, vizier_object, result, "II/237/colors")
-        result = search_catalog_coords(RA, DEC, vizier_object, result, "II/336/apass9")
 
     else:
         starname = starname.replace('A', '').replace('-', ' ').replace('_', ' ')
@@ -64,7 +67,6 @@ def retrieve_catalogs(starname, vizier_object, use_coords = False, RA = None, DE
         result = search_catalog_name(starname, vizier_object, result, "J/MNRAS/403/1949/ubvri")
         result = search_catalog_name(starname, vizier_object, result, "I/337/tgas")
         result = search_catalog_name(starname, vizier_object, result, "II/237/colors")
-        result = search_catalog_name(starname, vizier_object, result, "II/336/apass9")
 
 
     return result
@@ -84,11 +86,8 @@ def vizier_params(starname, use_coords = False, RA = None, DEC = None):
 
         result = retrieve_catalogs(starname, v, use_coords, RA, DEC)
 
-        #if str(result) != 'Empty TableList':
         if len(result) != 0:
-            #name_cats = result.keys()
             name_cats = [r.keys()[0] for r in result]
-            #print name_cats
 
             if len(result[0][0].columns) < 5:
                 v = Vizier(columns=["*"])
@@ -362,22 +361,7 @@ def vizier_params(starname, use_coords = False, RA = None, DEC = None):
                             else:
                                 photometry['K'] = [KV + vmag, e_hpmag, "II/237/colors", 2.5*10000., 0.0]
 
-                elif "II/336/apass9" in name_cats:
-                    i = name_cats.index("II/336/apass9")
-                    if e_hpmag == 0.0:
-                        e_hpmag = 0.01
-                    vmag = result[i][0]['Vmag'][0]
-                    e_vmag = result[i][0]['e_Vmag'][0]
-                    bmag = result[i][0]['Bmag'][0]
-                    e_bmag = result[i][0]['e_Bmag'][0]
-                    if e_vmag == 0.0:
-                        e_vmag = 0.01
-                    if e_bmag == 0.0:
-                        e_bmag = 0.01
-                    if np.isnan(float(vmag)) == False:
-                        photometry['V'] = [vmag, e_vmag, "II/336/apass9", 550.*10., 0.0]
-                    if np.isnan(float(bmag)) == False:
-                        photometry['B'] = [bmag, e_bmag, "II/336/apass9", 450.*10., 0.0]
+
 
         del result
 
@@ -397,9 +381,6 @@ def vizier_params(starname, use_coords = False, RA = None, DEC = None):
                     photometry = p
 
     except Exception as e:
-        #print 'Problem'
-        #print "Unexpected error:", sys.exc_info()[0]
-        #print e
         pass
 
     photometry = correct_extinction(photometry)
@@ -415,8 +396,7 @@ def correct_extinction(photometry):
     photo = photometry
     mag = ['U', 'B', 'V', 'R', 'I', 'J', 'H', 'K', 'b', 'y', 'Bt', 'Vt']
 
-    #print k
-    #print photometry
+
 
     if ('RA' in k) and ('DEC' in k):
         ra = photometry['RA'][0]
@@ -432,19 +412,14 @@ def correct_extinction(photometry):
         else:
             Av = findext_arenou(l, b)
 
-        #print Av
 
         for m in mag:
             #print m
             if m in k:
                 wave = photo[m][3]
                 A_wave = ccm89(np.array([wave]), Av, 3.1, unit='aa')[0]
-                #print A_wave, photometry[m][4]
-                #print type(A_wave), type(photometry[m][4])
                 photometry[m][4] = A_wave
-                #print m, wave, A_wave
 
-    #print photometry
 
     return photometry
 
@@ -485,7 +460,6 @@ def findext_arenou(ll, bb, distance=None, redlaw='cardelli1989', Rv=3.1, norm='A
     #-- Marshall is standard in Ak, but you can change this:
     #redwave, redflux = get_law(redlaw,Rv=Rv,norm=norm,photbands=['JOHNSON.V'],**kwargs)
 
-    #return av/redflux[0]
     return av
 
 
@@ -539,7 +513,7 @@ def _getarenouparams(ll,bb):
         elif 180 <= ll < 210:
             alpha = 1.39990 ; beta = -1.35325 ; rr0 = 0.252 ; saa = 10
         elif 210 <= ll < 240:
-            alpha = 2,73481 ; beta = -11.70266 ; rr0 = 0.117 ; saa = 8
+            alpha = 2.73481 ; beta = -11.70266 ; rr0 = 0.117 ; saa = 8
         elif 240 <= ll < 270:
             alpha = 2.99784 ; beta = -11.64272 ; rr0 = 0.129 ; saa = 3
         elif 270 <= ll < 300:
@@ -602,7 +576,7 @@ def _getarenouparams(ll,bb):
             alpha = 1.13147 ; beta = -1.87916 ; rr0 = 0.301 ; saa = 16
         elif 260 <= ll < 280:
             alpha = 0.97804 ; beta = -2.92838 ; rr0 = 0.338 ; saa = 21
-        elif 290 <= ll < 300:
+        elif 280 <= ll < 300:
             alpha = 1.40086 ; beta = -1.12403 ; rr0 = 0.523 ; saa = 19
         elif 300 <= ll < 320:
             alpha = 2.06355 ; beta = -3.68278 ; rr0 = 0.280 ; saa = 42
@@ -741,7 +715,7 @@ def _getarenouparams(ll,bb):
         elif 270 <= ll < 280:
             alpha = 0.68352 ; beta = -0.10743 ; rr0 = 2.000 ; saa = 50 ; gamma = 0.00849
         elif 280 <= ll < 290:
-            alpha = 0.61747 ; beta = 0.02675  ; rr0 = 2,000 ; saa = 49
+            alpha = 0.61747 ; beta = 0.02675  ; rr0 = 2.000 ; saa = 49
         elif 290 <= ll < 300:
             alpha = 0.06827 ; beta = -0.26290 ; rr0 = 2.000 ; saa = 44
         elif 300 <= ll < 310:
@@ -845,10 +819,10 @@ def _getarenouparams(ll,bb):
             alpha =  2.31305 ; beta = -7.82531  ; rr0 = 0.148 ; saa = 95
         elif 240 <= ll < 260:
             alpha =  1.39169 ; beta = -1.72984  ; rr0 = 0.402 ; saa = 6
-        elif 260 <= ll < 260:
+        elif 260 <= ll < 280:
             alpha =  1.59418 ; beta = -1.28296  ; rr0 = 0.523 ; saa = 36
         elif 280 <= ll < 300 :
-            alpha =  1.57082 ; beta = -197295   ; rr0 = 0.398 ; saa = 10
+            alpha =  1.57082 ; beta = -1.97295   ; rr0 = 0.398 ; saa = 10
         elif 300 <= ll < 320 :
             alpha =  1.95998 ; beta = -3.26159  ; rr0 = 0.300 ; saa = 11
         elif 320 <= ll < 340:
@@ -956,10 +930,13 @@ def stellar_class(photometry):
     # Cenvert the Bessell and Brett magnitudes to 2mass filters using the
     # relationships from Carpenter 2001
 
-    JH_dwarfs_2mass = 0.990*JH_dwarfs - 0.049
-    JH_giants_2mass = 0.990*JH_giants - 0.049
-    HK_dwarfs_2mass = 1.00*HK_dwarfs + 0.034
-    HK_giants_2mass = 1.00*HK_giants + 0.034
+    i_dwarfs = np.where(HK_dwarfs > 0.14)[0]
+    i_giants = np.where(HK_giants > 0.14)[0]
+
+    JH_dwarfs_2mass = 0.990*JH_dwarfs[i_dwarfs] - 0.049
+    JH_giants_2mass = 0.990*JH_giants[i_giants] - 0.049
+    HK_dwarfs_2mass = 1.00*HK_dwarfs[i_dwarfs] + 0.034
+    HK_giants_2mass = 1.00*HK_giants[i_giants] + 0.034
 
     line_dwarfs = geom.LineString(zip(HK_dwarfs_2mass, JH_dwarfs_2mass))
     line_giants = geom.LineString(zip(HK_giants_2mass, JH_giants_2mass))
@@ -981,7 +958,7 @@ def stellar_class(photometry):
 
         # Compute distance from curves
 
-        if HK > 0.11:
+        if HK > 0.14:
             point = geom.Point(HK, JH)
             d_dwarf = point.distance(line_dwarfs)
             d_giant = point.distance(line_giants)
@@ -1034,7 +1011,29 @@ def ini_met(photometry):
 #******************************************************************************
 #******************************************************************************
 
-def mamajek(photometry):
+def correct_mamajek(Tc, color, inst):
+    # harps, feros, hires, uves
+
+    corrections = {'B-V': (10.3, 30.1, 72.9, 6.3),\
+                   'V-R': (102.6, 0.0, 0.0, 0.0),\
+                   'V-I': (51.1, 0.0, 0.0, 0.0),\
+                   'V-K': (-19.4, -13.1, 25.9, 18.2),\
+                   'J-H': (20.9, -32.5, 112.0, 41.9),\
+                   'H-K': (135.0, 111.9, 104.4, 216.0),\
+                   'Bt-Vt': (79.1, 87.2, 129.6, 112.0)}
+
+    x = 0
+    if inst == 'harps':
+        x = corrections[color][0]
+    elif inst == 'feros':
+        x = corrections[color][1]
+    elif inst == 'hires':
+        x = corrections[color][2]
+    elif inst == 'uves':
+        x = corrections[color][3]
+    return Tc + x
+
+def mamajek(photometry, inst):
     # Define the spline representations
 
     tck_bv = (np.array([3000.,  3000.,   3000.,   3000.,   3100.,   3200.,   3250.,
@@ -1246,6 +1245,10 @@ def mamajek(photometry):
             tck_new = (tcks[i][0], tcks[i][1]-C, tcks[i][2])
             zeros = interpolate.sproot(tck_new)
 
+            correction = correct_mamajek(0.0, colors[i], inst)
+
+            zeros = zeros + correction
+
             if len(zeros) == 1:
                 T = np.append(T, zeros[0])
                 err_mag = np.append(err_mag, e_C)
@@ -1305,22 +1308,33 @@ def gonzalez_hernandez(photometry, met):
                 T = 5040./theta_eff
                 T_final = T.n
                 err_T_final = T.s
-                #T = np.append(T, 5040./theta_eff)
-                #err_mag = np.append(err_mag, e_C)
 
-    #if len(T) > 0:
-
-    #    T_average = np.average(T, weights = 1./err_mag)
-    #else:
-    #    T_average = 0.0
-
-    #return T_average
     return T_final, err_T_final
 
 
 #******************************************************************************
 #******************************************************************************
 
+def correct_mann(Tc, color, inst, met):
+    # harps, feros, hires, uves
+    corrections = {'V-J': ((41.3, 26.3, 89.7, 53.4), (-87.8, -73.3, -87.8, -48.2)),\
+                   'V-I': ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0))}
+
+    m = 1
+    if met:
+        m = 0
+
+    x = 0
+    if inst == 'harps':
+        x = corrections[m][color][0]
+    elif inst == 'feros':
+        x = corrections[m][color][1]
+    elif inst == 'hires':
+        x = corrections[m][color][2]
+    elif inst == 'uves':
+        x = corrections[m][color][3]
+
+    return Tc + x
 
 
 def coefs_mann(type_color, met = True):
@@ -1385,7 +1399,6 @@ def mann(photometry, met):
             c = 0.0
             color = ufloat(c, 999.0)
 
-        #print i, c
 
         if ('J' in photo_keys) and ('H' in photo_keys):
             C1 = photometry['J'][0] - photometry['J'][4]
@@ -1454,7 +1467,7 @@ def coefs_casagrande(type_color, color):
 
 
 
-def casagrande(photometry, met):
+def casagrande(photometry, met, inst):
     possible_colors = ['Vt-K', 'V-K', 'Vt-H', 'V-H', 'V-J', 'Vt-J', 'V-I', \
                        'b-y', 'V-R', 'B-V', 'Bt-Vt', 'R-I', 'J-K']
     photo_keys = photometry.keys()
@@ -1463,7 +1476,8 @@ def casagrande(photometry, met):
     color_p = 'no_color'
     T_final = 0.0
     err_T_final = 100000.
-    color_p_final = 'no_color'
+    color_p_final = ''
+    T_array = []
     for c in possible_colors:
         #print c
         c1, c2 = c.split('-')
@@ -1474,27 +1488,26 @@ def casagrande(photometry, met):
             i = coefs_casagrande(c, color)
             t = i[0] + i[1]*color + i[2]*color**2. + i[3]*color*met\
                 + i[4]*met + i[5]*met**2.
-            #print i, c, color, t, (t < 5040./3500.), (t > 5040./10000.)
             if t.n!=0.0 and (t.n < 5040./3500.) and (t.n > 5040./10000.):
-                T_array = 5040./t
-                T_array2.append(T_array)
-                #print T_array, c
-                color_p = c
-                if T_array.s < err_T_final:
-                    T_final = T_array.n
-                    err_T_final = T_array.s
-                    color_p_final = c
+                T_array_v1 = (5040./t).n
+                err_T_array_v1 = (5040./t).s
+                T_corrected = correct_casagrande(T_array_v1, c, inst)
+                T_array.append(ufloat(T_corrected, err_T_array_v1))
+                color_p_final += '%s: %.1f +- %.1f, ' % (c, T_corrected, err_T_array_v1)
+
                 del t
-                #break
+
+    T_array = np.array(T_array)
+    if len(T_array) > 0:
+        T_mean = np.mean(T_array)
+        T_final = T_mean.n
+        err_T_final = T_mean.s
+
+        color_p_final = color_p_final[:-2]
 
 
     del possible_colors, photo_keys
-    #print T_array, color_p
-    #print np.median(T_array2)
-    #print T_final, err_T_final, color_p_final
 
-    #return T_array.n, color_p
-    #return np.median(T_array2).n, color_p
     return T_final, err_T_final, color_p_final
 
 
@@ -1529,13 +1542,13 @@ def use_relation(photometry):
 #******************************************************************************
 
 
-def check_relation(photometry, xmetal, exception):
+def check_relation(photometry, xmetal, exception, inst):
 
     relation = use_relation(photometry)
     T_c = 0.0
 
     if relation == 'casagrande':
-        T_c, err_T_c, color_c = casagrande(photometry, xmetal)
+        T_c, err_T_c, color_c = casagrande(photometry, xmetal, inst)
 
     if (T_c == 0.0) or (relation == 'mann'):
         if exception == 1:
@@ -1543,10 +1556,9 @@ def check_relation(photometry, xmetal, exception):
         else:
             T_c, err_T_c = mann(photometry, met = None)
 
-        #print T_c
 
         if T_c == 0.0 or T_c > 4000.:
-            T_c, err_T_c, color_c = casagrande(photometry, xmetal)
+            T_c, err_T_c, color_c = casagrande(photometry, xmetal, inst)
             relation = 'casagrande'
 
         else:
@@ -1561,19 +1573,19 @@ def check_relation(photometry, xmetal, exception):
 
 def correct_casagrande(Tc, color, inst):
     # harps, feros, hires, uves
-    corrections = {'B-V': (47.3, 54.7, 141.8, 53.8),\
-                   'V-R': (31.3, 35.5, 301.3, 0.4),\
-                   'R-I': (22.1, 35.8, 209.2, 65.6),\
-                   'V-I': (24.4, 12.5, 276.8, 19.2),\
-                   'V-J': (1.0, -19.7, 72.3, 18.1),\
-                   'V-H': (18.2, -15.8, 103.3, 48.1),\
-                   'V-K': (31.3, 19.8, 91.4, 72.9),\
-                   'J-K': (87.4, 102.5, 196.8, 195.6),\
-                   'Bt-Vt': (28.6, 26.9, 64.3, 26.7),\
-                   'Vt-J': (7.6, -8.1, 45.6, 8.3),\
-                   'Vt-H': (28.7, 2.0, 72.4, 40.6),\
-                   'Vt-K': (26.5, 22.2, 74.9, 62.5),\
-                   'b-y': (22.9, 9.7, 75.0, 59.3)}
+    corrections = {'B-V': (3.2, 7.3, 43.6, 27.6),\
+                   'V-R': (54.1, 0.0, 0.0, 0.0),\
+                   'R-I': (22.9, 0.0, 0.0, 0.0),\
+                   'V-I': (17.5, 0.0, 0.0, 0.0),\
+                   'V-J': (-63.8, -79.0, -6.7, -52.0),\
+                   'V-H': (-26.9, -39.0, 27.9, 8.2),\
+                   'V-K': (-24.3, -14.8, 25.4, 18.9),\
+                   'J-K': (70.8, 45.9, 144.3, 166.2),\
+                   'Bt-Vt': (-3.3, 0.4, 29.8, -6.8),\
+                   'Vt-J': (-71.3, -71.4, -18.4, -53.0),\
+                   'Vt-H': (-28.2, -46.1, 15.2, -2.9),\
+                   'Vt-K': (-31.2, -25.1, 0.5, 6.8),\
+                   'b-y': (-58.8, -51.5, -34.5, -20.6)}
 
     x = 0
     if inst == 'harps':

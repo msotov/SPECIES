@@ -21,7 +21,7 @@ def compute_snr(x, data):
     for r in range(len(ranges)):
         data_range = data[np.where((x >= ranges[r][0]) & (x <= ranges[r][1]))[0]]
         if len(data_range) != 0:
-            m = np.mean(data_range)
+            m = np.median(data_range)
             s = np.std(data_range)
             sn.append(m/s)
 
@@ -31,7 +31,7 @@ def compute_snr(x, data):
 
     del ranges
 
-    return np.mean(sn)
+    return np.median(sn)
 
 
 #*****************************************************************************
@@ -47,7 +47,6 @@ def values(h, j):# funcion que extrae las longitudes de onda del header
     val = np.zeros(N);
     for i in range(N):
         val[i] = (i + 1 - CRPIX)*CDELT + CRVAL
-        #val[i] = (i + 1 - float(h['CRPIX' + str(j)]))*float(h['CDELT' + str(j)]) + float(h['CRVAL' + str(j)]);
 
     del N, CRPIX, CDELT, CRVAL
     return val
@@ -325,6 +324,14 @@ def feros(starname, abundances = False):
 
         del xnew, ynew, dif, delta_x, header_new
 
+    else:
+        if len(hdu[0].data.shape) > 2:
+            snr = feros_orders(starname, abundances = abundances)
+            hdu.close()
+            del hdu, header0
+            return snr
+        hdu.close()
+
     del hdu, header0
 
 
@@ -364,7 +371,7 @@ def feros(starname, abundances = False):
 #*****************************************************************************
 
 
-def feros_orders(starname, abundances = False):
+def feros_orders(starname, abundances = False, do_restframe = True):
 
     hdulist = pyfits.open(starname + '.fits')
 
@@ -383,9 +390,17 @@ def feros_orders(starname, abundances = False):
 
         rangos = []
 
-        if 'PIPELINE' in header0.keys():
-            data = hdulist[0].data[1]
-            x = hdulist[0].data[0]
+        if ('PIPELINE' in header0.keys()) or ('NAXIS3' in header0.keys()):
+
+            if header0['NAXIS3'] > 2:
+
+                data = hdulist[0].data[5]
+                x = hdulist[0].data[0]
+                print 'hola'
+
+            else:
+                data = hdulist[0].data[1]
+                x = hdulist[0].data[0]
 
             for i in range(x.shape[0]):
                 data_i = data[i]
@@ -484,7 +499,11 @@ def feros_orders(starname, abundances = False):
     if os.path.isfile(starname + '_res.fits'):
         print '\t\tThere is already a file named ' + starname + '_res.fits'
     else:
-        restframe(starname + '.fits')
+        if do_restframe:
+            restframe(starname + '.fits')
+        else:
+            os.system('cp ' + starname + '.fits ' + starname + '_res.fits')
+            print '\t\tNo restframe correction will be performed.'
 
     ##############################################
     # Computes the S/N
@@ -822,7 +841,6 @@ def uves(starname, abundances = False):
             indice2 = int(np.where(x == x_2)[0])
             rango_x = [x[j] for j in range(indice1,indice2+1)]
             rango_flux = [flux[j] for j in range(indice1,indice2+1)]
-            #print rango_x
             tck = interpolate.InterpolatedUnivariateSpline(rango_x, rango_flux, k = 5)
             xnew_rango = []
             for p in range(len(xnew)):
@@ -991,34 +1009,40 @@ def hires(starname, abundances = False):
             # Creates the interpolation parameters and saves them
             # in tcks_flux and tcks_sn
 
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x, flux, k = 5)
-            tck_sn = interpolate.InterpolatedUnivariateSpline(x, sn, k = 5)
-
-            tcks_flux.append(tck_flux)
-            tcks_sn.append(tck_sn)
-            rangos_w.append([x[0], x[-1]])
-
-            d = np.array([x[i + 1] - x[i] for i in range(len(x) - 1)])
-            deltas.append(np.mean(d))
-            if np.mean(d) == 0.:
-                print '\t\tWave values are the same for every row.'
-                break
+            if np.all(x == -1.) == False:
 
 
-            for p in range(len(borders_ccds)):
-                if (j - 1) == borders_ccds[p][0]:
-                    rangos_ccds.append(x[0])
-                if (j - 1) == borders_ccds[p][1]:
-                    rangos_ccds.append(x[-1])
+                tck_flux = interpolate.InterpolatedUnivariateSpline(x, flux, k = 5)
+                tck_sn = interpolate.InterpolatedUnivariateSpline(x, sn, k = 5)
 
-            del x, flux, sn, tabla, tck_flux, tck_sn, d
+                tcks_flux.append(tck_flux)
+                tcks_sn.append(tck_sn)
+                rangos_w.append([x[0], x[-1]])
+
+                d = np.array([x[i + 1] - x[i] for i in range(len(x) - 1)])
+                deltas.append(np.mean(d))
+                if np.mean(d) == 0.:
+                    print '\t\tWave values are the same for every row.'
+                    break
+
+
+                for p in range(len(borders_ccds)):
+                    if (j - 1) == borders_ccds[p][0]:
+                        rangos_ccds.append(x[0])
+                    if (j - 1) == borders_ccds[p][1]:
+                        rangos_ccds.append(x[-1])
+
+                del tck_flux, tck_sn, d
+
+
+            del x, flux, sn, tabla
 
         ###############################################
         # Do not create the image if the wavelength
         # values are wrong.
         ###############################################
         deltas = np.array(deltas)
-        if (np.mean(deltas) == 0.) or (len(files) == 0):
+        if (np.mean(deltas) == 0.) or (len(files) == 0) or (len(deltas) == 0):
             snr = 0.
             print '\t\tWas not able to generate the fits file.'
 
@@ -1155,9 +1179,9 @@ def hires(starname, abundances = False):
             ab = abundances
             plot_lines(x, data, starname, abundances = ab)
 
-            range1 = '5302.94,5306.69'#raw_input('First range (separated by comas): ')
-            range2 = '5546.95,5553.64'#raw_input('Second range (separated by comas): ')
-            range3 = '5721.31,5726.53'#raw_input('Third range (separated by comas): ')
+            range1 = '5302.94,5306.69'
+            range2 = '5546.95,5553.64'
+            range3 = '5721.31,5726.53'
 
             snr = []
             indice1 = range1.index(',')
@@ -1404,9 +1428,15 @@ def coralie(starname, abundances = False):
     if (is_raw_image == True) and (header0['NAXIS'] != 1):
 
         if header0['NAXIS'] == 3:
-            data = hdulist[0].data
-            wave = data[0]
-            flux = data[1]
+            if (header0['NAXIS3'] == 2):
+                data = hdulist[0].data
+                wave = data[0]
+                flux = data[1]
+
+            else:
+                data = hdulist[0].data
+                wave = data[0]
+                flux = data[3]
 
         else:
 
@@ -1538,7 +1568,6 @@ def plot_lines(x, data, nombre, hold_plot = False, abundances = False, save_fig 
 
     axins = inset_axes(ax, width = "25%", height = "25%", loc = 2)
     i_range  = np.where((x > 6550.) & (x < 6575.))[0]
-    #i_range = [i for i in range(len(x)) if x[i]>6550. and x[i]<6575.]
     x_range = x[i_range]
     data_range = data[i_range]
 
@@ -1558,13 +1587,10 @@ def plot_lines(x, data, nombre, hold_plot = False, abundances = False, save_fig 
             new_name = nombre[indice + 1:]
             nombre = new_name
         if abundances == False:
-            #fig.savefig('./EW/plots_spectra/' + nombre + '.ps')
             fig.savefig('./EW/plots_spectra/' + nombre + '.pdf')
         else:
-            #fig.savefig('./EW/plots_spectra/' + nombre + '_ab.ps')
             fig.savefig('./EW/plots_spectra/' + nombre + '_ab.pdf')
 
-    #fig.show()
 
     if hold_plot == True:
         press = raw_input('\t\tpress enter to continue')

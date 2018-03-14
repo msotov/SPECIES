@@ -1,10 +1,8 @@
 '''
-Last modified in: 31/05/2017
+Last modified in: 14/03/2018
 '''
 
-import os, glob, re, math, time, sys, logging
-sys.path.append("./files_data")
-sys.path.append("./aux_codes")
+import os, glob, re, math, time, logging
 import numpy as np
 from astropy.io import ascii, fits
 from astropy.table import Table, Column
@@ -18,38 +16,29 @@ from scipy.stats import sigmaclip
 from atmos import atmos
 import calc_broadening as cb
 
-#from gevent import Timeout
-#from gevent import monkey
-#monkey.patch_all()
-
 
 #******************************************************************************
 #******************************************************************************
 #******************************************************************************
 #******************************************************************************
-
-#def multi_run_wrapper(args):
-#    return run_iteration(*args)
 
 
 def multi_run_wrapper(args):
     try:
-
-        #minutes = 60
-        #timeout = Timeout(60*minutes)
-        #timeout.start()
         return run_iteration(*args)
     except Exception as e:
         print e
+        logging.error('Error in code, stopping the computation')
+        logging.error(e)
         return (args[0], 0.0, 0.0, 0.0, 0.0, 2, 0, 0, 0.0, 0.0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 0.0, 0.0, 0, 0.0, 0.0, 0, 0.0, 0.0, 0,\
                 2, 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 'no', 'no')
-
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
+                'no', 'no', 'no', 0.0, 0.0, 'None')
 
 #******************************************************************************
 #******************************************************************************
@@ -198,7 +187,6 @@ def runMOOG(atmos_params):
     m = atmos_params['metallicity']['value']
     vt = atmos_params['velocity']['value']
     interpol(starname, T, g, m, vt)
-    #cmd = 'bash run_moog.bash abfind_%s.par' % starname
     cmd = 'MOOGSILENT > temp.log 2>&1 <<EOF\nMOOGFEB2017/ab_%s.par\n\nEOF' % starname
     os.system(cmd)
     ab, ep, dif, rw, nfailed = compute_average_abundance(starname, w = False)
@@ -305,7 +293,7 @@ def Metallicity(atmos):
         xmetal = atmos.atmos_params['metallicity']['value']
         xmetal_antes = xmetal
         ab, ep, dif, rw = atmos.atmos_params['moog']
-        if abs(ab - xmetal) <= 0.002:
+        if abs(ab - xmetal) <= 0.02:
             atmos.new_change()
             break
 
@@ -553,7 +541,7 @@ def Velocity(atmos, i):
 
         if abs(rw) <= 0.002:
             if ab == atmos.atmos_params['metallicity']['value']:
-                atmos.new_change('metallicity') #????????????????????????
+                atmos.new_change('metallicity')
             else:
                 atmos.new_change('velocity')
             break
@@ -765,16 +753,130 @@ def calc_params(star, hold, init_vals, debug, log_f = None,\
 #******************************************************************************
 
 
+def calc_atm_params(star, hold, init_vals, err_init_vals, debug, log_f, set_boundaries, vals_boundaries, \
+                    try_with_vt_hold, check_with_photometry_T, relation_temp, photometry,\
+                    inst, nFeI, T_c):
+
+    use_vt = 'no'
+
+    T, logg, xmetal, micro, exception = calc_params(star, hold, init_vals, \
+                                                    debug, log_f, \
+                                                    set_boundaries, \
+                                                    vals_boundaries)
+
+    if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold) == False) \
+            and (nFeI > 10):
+        hold_c1 = hold[:]
+        init_vals_c1 = init_vals[:]
+        hold_c1.append('velocity')
+        init_vals_c1[3] = 1.2
+        if debug:
+            log_f.debug('Trying again with vt = 1.2 km/s.')
+        T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c1, init_vals_c1, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
+        use_vt = 'yes'
+
+    #########################################################################
+    # Computes the temperature using the relations in Casagrande et al. 2010.
+    # If the difference in T is greater than 500 K, compute everything again
+    # but fixing the temperature to the one from Casagrande et al. 2010.
+    #########################################################################
+
+    use_casagrande = 'no'
+
+    if (check_with_photometry_T == True) and (('temperature' in hold) == False):
+        # If Casagrande et al. or Mann et al. were used to for Tc,
+        # recompute using the metallicity from SPECIES
+
+        if (relation_temp == 'casagrande') or (relation_temp == 'mann') and (exception == 1):
+            T_c2, err_T_c2, color_c2, relation2 = pr.check_relation(photometry, xmetal, exception, inst)
+            if relation2 == 'casagrande':
+                if T_c2 != 0.0:
+                    T_c = T_c2#_n
+                    if debug:
+                        log_f.debug('New temperature using the Casagrande et al. 2010 formula is %f +- %f, using %s',\
+                                    T_c2, err_T_c2, color_c2)
+
+            if relation2 == 'mann':
+                if T_c2 != 0.0:
+                    if exception == 1:
+                        T_c2_n = pr.correct_mann(T_c2, color_c2, inst, True)
+                    else:
+                        T_c2_n = pr.correct_mann(T_c2, color_c2, inst, False)
+
+                    T_c = T_c2_n
+                    if debug:
+                        log_f.debug('New temperature using the Mann et al. 2015 formula is %f +- %f, using %s',\
+                                    T_c2_n, err_T_c2, color_c2)
+
+            err_init_vals[0] = err_T_c2
+
+        if exception == 2:
+            if T_c > 3000. and T_c < 10000.:
+                use_casagrande = 'yes'
+
+                hold_c = hold[:]
+                hold_c.append('temperature')
+                init_vals_c = init_vals[:]
+                init_vals_c[0] = T_c
+                if debug == True:
+                    log_f.debug('Difference between T_c and T is larger than 200 K '\
+                                'or exception is equal to two.')
+                    log_f.debug('Computing the parameters again but using T_c.')
+
+                T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c, init_vals_c, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
+
+                use_vt = 'no'
+
+                if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold_c) == False) \
+                    and (nFeI > 10):
+                    hold_c.append('velocity')
+                    init_vals_c[3] = 1.2
+                    if debug:
+                        log_f.debug('Trying again with vt = 1.2 km/s.')
+                        T, logg, xmetal, micro, exception = calc_params(star, \
+                                                    hold_c, init_vals_c, \
+                                                    debug, log_f, \
+                                                    set_boundaries,\
+                                                    vals_boundaries)
+                        use_vt = 'yes'
+
+
+            else:
+                if debug:
+                    log_f.debug('Temperature from photometry outside of the permitted ranges. '\
+                                'Stopping the calculation.')
+
+        else:
+            if debug:
+                log_f.debug('There is agreement between the obtained temperature and from photometry.')
+
+    return T, logg, xmetal, micro, exception, use_vt, use_casagrande, err_init_vals, log_f
+
+
+#******************************************************************************
+#******************************************************************************
+#******************************************************************************
+#******************************************************************************
+
+
 
 def run_iteration(starlist,\
-                  debug = False,\
+                  debug = True,\
                   hold_params = False,\
                   ab = True,\
                   err = True,\
                   file_parameters = None,\
                   save_coefs_error = False,\
                   make_plots_coefs_error = False,\
-                  check_with_casagrande = False,\
+                  check_with_photometry_T = False,\
                   colors_from_file = False,\
                   name_file_colors = None,\
                   hold_mass = False,\
@@ -784,54 +886,68 @@ def run_iteration(starlist,\
                   set_boundaries = False,\
                   file_with_boundaries = None,
                   mass_from_file = False,
-                  try_with_vt_hold = False):
+                  try_with_vt_hold = False,
+                  recompute_with_logg_p = True):
     """
-    Run the iteration from a list of stars between the indices nini and nfin.
+    Compute all the parameters for one star.
 
-    Input: -starlist : name of the star.
-           -debug : True/False, if you want to turn on or off the debugging option.
-                    Default is False.
-           -name_file_debug : name of the file for debugging, with no extension. Used only if debug = True.
-                              Default is None.
-           -hold_params: True/False, if you want to read or not from a file the initial parameters and hold options.
-                         If False, it will read from a random file that shouldn't exist.
-           -ab : True/False, if you want to compute the abundances for certain elements.
-                 Default is True.
-           -err : True/False, if you want to compute the errors in T, logg, metallicity and vt.
-                  Default is True.
-           -file_parameters : name of the file with the initial and hold values. Used only if hold_params = True.
-                              Default is None.
-           -save_coefs_error : True/False, if you want to save the coefficients of the fits made when computing the errors.
-                               Used only if err = True.
-                               Default if False.
-           -make_plots_coefs_error : True/False, if you want to save plots of the correlations between the parameters,
-                                     when computing the errors. Used only if err = True.
-                                     Default is False.
-           -make_plot_broadening : True/False, if you want to save the plots of the CCF and the Fourier Transform,
-                                   when computing the broadening of the lines.
-                                   Default is False.
-
-    Returns: -star : name of the star.
-             -T : Temperature.
-             -logg : logg.
-             -xmetal : metallicity.
-             -micro : microturbulence.
-             -exception : exceptions of the computation of T, logg, xmetal and micro.
-                          1: finished with no problem.
-                          2: Encountered a problem and didn't converge to correct final values.
-             -nFeI : Number of FeI lines used.
-             -nFeII : Number of FeII lines used.
-             -ab_FeI : abundance of FeI, using the errors of the EW as weights.
-             -ab_FeII : abundance of FeII, using the errors of the EW as weights.
-             -broadening
-             -err_broad
-             -mass
-             -err_mass
-             -age
-             -err_age
-             -s_logg
-             -err_s_logg
-
+    Input: -starlist :
+                name of the star.
+           -debug :
+                Bool. If you want to turn on or off the debugging option.
+                Default is True.
+           -hold_params:
+                Bool. If you want to read from a file the initial parameters and hold options.
+                If False, it will read from a random file that shouldn't exist.
+           -ab :
+                Bool. If you want to compute the abundances for certain elements.
+                Default is True.
+           -err :
+                Bool. If you want to compute the errors in T, logg, metallicity and vt.
+                Default is True.
+           -file_parameters :
+                Name of the file with the initial and hold values. Used only if hold_params = True.
+                Default is None.
+           -save_coefs_error :
+                Bool. If you want to save the coefficients of the fits made when computing the errors.
+                Used only if err = True. Default if False.
+           -make_plots_coefs_error :
+                Bool. If you want to save plots of the correlations between the parameters,
+                when computing the errors. Used only if err = True. Default is False.
+           -check_with_photometry_T :
+                Bool. Check the obtained temperature with the one from using the phototric relations,
+                and set it to the photometric value if they don't agree. Default is False.
+           -colors_from_file :
+                Bool. Retrieve the photometric magnitudes from a file instead of from catalogues in Vizier.
+                Default is False.
+           -name_file_colors:
+                Name of the file with the magnitudes. Used only if colors_from_file is True.
+           -hold_mass :
+                Bool. If you want to set the mass, age, and radius of the star to a certain value.
+                Default is False.
+           -file_hold_mass:
+                Name of the file with the values of mass, age, and radius.
+                Used only if hold_mass is True.
+           -use_coords :
+                Bool. Use the star's coordinates instead of its name to search for the
+                photometric magnitudes. Default is False.
+           -file_with_coords:
+                Name of the file with the star's coordinates, in deg. Used only if use_coords is True.
+           -set_boundaries :
+                Bool. Set the boundaries of the atmospheric parameters. Default is False.
+           -file_with_boundaries :
+                Name of the file with the boundaries for the atmospheric parameters.
+           -mass_from_file :
+                Bool. Read the information for the mass, age, and radius from a previously created file.
+                The file must have been created using the SPECIES, from a previous computation.
+                Default is False.
+           -try_with_vt_hold :
+                Bool. Set the microturbulence to 1.2 km/s when the atmospheric parameters do not converge.
+                Default is False.
+           -recompute_with_logg_p :
+                Bool. Check the logg with the one from the isochrones models, and recompute the atmospheric
+                parameters if they disagree (diference between both measurements > error in logg from isochrones).
+                Default is True.
     """
     #########################################################################
     # Begins the calculation for each star.
@@ -840,7 +956,6 @@ def run_iteration(starlist,\
     star = starlist
     star_name = star
     inst = 'nofound'
-    #star_name = star[:star.index('_')]
     indices = [indx for indx, c in enumerate(star) if '_' == c]
     if len(indices) > 0:
         inst = star[indices[-1]+1:]
@@ -940,8 +1055,6 @@ def run_iteration(starlist,\
                     log_f.debug('Attempting to find colors for ' + new_name)
                 photometry = pr.vizier_params(new_name)
             except Exception as e:
-                #print "Unexpected error:", sys.exc_info()[0]
-                #print e
                 pass
 
 
@@ -983,11 +1096,12 @@ def run_iteration(starlist,\
     if debug:
         log_f.debug('Photometry information is: %s', photometry)
 
-    #print photometry
 
     #########################################################################
     # Derive initial conditions from photometry
     #########################################################################
+
+    relation_temp = 'None'
 
     # Stellar class:
     sp_class = pr.stellar_class(photometry)
@@ -1001,40 +1115,47 @@ def run_iteration(starlist,\
 
     # Initial temperature:
     if sp_class == 'dwarf':
-        T_c, err_T_c, color_c, relation = pr.check_relation(photometry, ini_met, 1)
+        T_c, err_T_c, color_c, relation = pr.check_relation(photometry, ini_met, 1, inst)
         if T_c != 0.0:
             if relation == 'casagrande':
-                T_c = pr.correct_casagrande(T_c, color_c, inst)
+                relation_temp = 'casagrande'
                 if debug:
                     log_f.debug('Temperature using the Casagrande et al. 2010 formula is %f +- %f, using %s',\
                                 T_c, err_T_c, color_c)
             else:
+                relation_temp = 'mann'
                 if debug:
                     log_f.debug('Temperature using the Mann et al. 2015 formula is %f +- %f, using %s',\
                                 T_c, err_T_c, color_c)
 
         else:
-            T_c, err_T_c = pr.mamajek(photometry)
+            T_c, err_T_c = pr.mamajek(photometry, inst)
             if T_c != 0.0:
+                relation_temp = 'mamajek'
                 if debug:
                     log_f.debug('Temperature using the Mamajek table is %f +- %f', T_c, err_T_c)
 
     else:
         T_c, err_T_c = pr.gonzalez_hernandez(photometry, ini_met)
         if T_c != 0.0:
+            relation_temp = 'gonzalez_hernandez'
             if debug:
                 log_f.debug('Temperature using Gonzalez-Hernandez and Bonifacio 2009 is %f +- %f', T_c, err_T_c)
 
+    valid_ini_logg = False
     if T_c != 0.0:
 
         # Initial logg
         ini_logg = pr.ini_logg(T_c, sp_class)
+        if ini_logg < 4.8:
+            valid_ini_logg = True
         ini_logg = min(ini_logg, 4.8)
         if debug:
             log_f.debug('Initial logg is %f', ini_logg)
 
 
         init_vals = [T_c, ini_logg, ini_met, 1.23]
+        err_init_vals = [err_T_c, 0.1, 0.1, 0.1]
 
     else:
         if debug:
@@ -1042,6 +1163,7 @@ def run_iteration(starlist,\
                         'Check the photometric information of your star')
 
         init_vals = [5500., 4.36, 0.0, 1.23]
+        err_init_vals = [0.0, 0.0, 0.0, 0.0]
 
 
     #########################################################################
@@ -1057,18 +1179,13 @@ def run_iteration(starlist,\
             arch_params = ascii.read(file_params)
             stars_params = arch_params['Starname']
             hold_par = np.array(arch_params['hold'])
-            T_params = arch_params['T']
-            logg_params = arch_params['logg']
-            met_params = arch_params['met']
-            micro_params = arch_params['micro']
-            vbroad_params = arch_params['broadening']
-            err_vbroad_params = arch_params['err_broad']
+            T_params = np.array(arch_params['T'])
+            logg_params = np.array(arch_params['logg'])
+            met_params = np.array(arch_params['met'])
+            micro_params = np.array(arch_params['micro'])
             vsini_params = arch_params['vsini']
-            err_vsini_params = arch_params['err_vsini']
             vmac_params = arch_params['vmac']
-            err_vmac_params = arch_params['err_vmac']
             del arch_params
-
 
             if star_name in stars_params:
                 try:
@@ -1077,35 +1194,47 @@ def run_iteration(starlist,\
                     i = int(np.where(stars_params == star_name)[0][0])
 
 
-                if hold_par[i] == 'no': 
+                if hold_par[i] == 'no':
                     hold = []
                 else:
                     hold = hold_par[i].split(',')
 
+                if str(T_params[i]) != 'no':
+                    init_vals[0] = float(str(T_params[i]).split(',')[0])
+                    if ',' in str(T_params[i]):
+                        err_init_vals[0] = float(str(T_params[i]).split(',')[1])
+                if str(logg_params[i]) != 'no':
+                    init_vals[1] = float(str(logg_params[i]).split(',')[0])
+                    if ',' in str(logg_params[i]):
+                        err_init_vals[1] = float(str(logg_params[i]).split(',')[1])
+                if str(met_params[i]) != 'no':
+                    init_vals[2] = float(str(met_params[i]).split(',')[0])
+                    if ',' in str(met_params[i]):
+                        err_init_vals[2] = float(str(met_params[i]).split(',')[1])
+                if str(micro_params[i]) != 'no':
+                    init_vals[3] = float(str(micro_params[i]).split(',')[0])
+                    if ',' in str(micro_params[i]):
+                        err_init_vals[3] = float(str(micro_params[i]).split(',')[1])
 
-                if T_params[i] != 'no': init_vals[0] = float(T_params[i])
-                if logg_params[i] != 'no': init_vals[1] = float(logg_params[i])
-                if met_params[i] != 'no': init_vals[2] = float(met_params[i])
-                if micro_params[i] != 'no': init_vals[3] = float(micro_params[i])
-
-                try:
-                    broadening = float(vbroad_params[i])
-                    error_broadening = float(err_vbroad_params[i])
-                    vs = float(vsini_params[i])
-                    err_vs = float(err_vsini_params[i])
-                    vm = float(vmac_params[i])
-                    err_vm = float(err_vmac_params[i])
-
+                if (str(vsini_params[i]) != 'no') and (str(vmac_params[i]) != 'no'):
+                    vs = float(str(vsini_params[i]).split(',')[0])
+                    if ',' in str(vsini_params[i]):
+                        err_vs = float(str(vsini_params[i]).split(',')[1])
+                    else:
+                        err_vs = 0.5
+                    vm = float(str(vmac_params[i]).split(',')[0])
+                    if ',' in str(vmac_params[i]):
+                        err_vm = float(str(vmac_params[i]).split(',')[1])
+                    else:
+                        err_vm = 0.5
                     hold_broad = 1
-                except ValueError:
-                    pass
+
 
             else:
                 hold = []
 
             del T_params, logg_params, met_params, micro_params, hold_par,\
-                stars_params, vbroad_params, err_vbroad_params,\
-                vsini_params, err_vsini_params, vmac_params, err_vmac_params
+                stars_params, vsini_params, vmac_params
 
 
         except IOError:
@@ -1114,8 +1243,6 @@ def run_iteration(starlist,\
     else:
         file_params = 'random_file.txt'
         hold = []
-
-
 
 
     #########################################################################
@@ -1163,6 +1290,13 @@ def run_iteration(starlist,\
         set_boundaries = False
         vals_boundaries = {}
 
+    if (set_boundaries == False):
+        vals_boundaries = {}
+        if (T_c != 0.0):
+            vals_boundaries['temperature'] = (T_c - 300.0, T_c + 300.0)
+
+        set_boundaries = True
+
 
     #########################################################################
     # Searches for all the stars with EW values.
@@ -1187,6 +1321,8 @@ def run_iteration(starlist,\
             err_age_params = arch_mass_params['err_age']
             logg_p_params = arch_mass_params['logg_p']
             err_logg_p_params = arch_mass_params['err_logg_p']
+            radius_params = arch_mass_params['radius']
+            err_radius_params = arch_mass_params['err_radius']
 
             if (star in stars_hold_mass) == True:
                 i_mass = int(np.where(stars_hold_mass == star)[0])
@@ -1196,12 +1332,14 @@ def run_iteration(starlist,\
                 err_age = err_age_params[i_mass]
                 s_logg = logg_p_params[i_mass]
                 err_s_logg = err_logg_p_params[i_mass]
+                radius = radius_params[i_mass]
+                err_radius = err_radius_params[i_mass]
 
                 use_hold_mass = 1
 
             del stars_hold_mass, mass_params, err_mass_params, age_params, \
                 err_age_params, logg_p_params, err_logg_p_params,\
-                arch_mass_params
+                arch_mass_params, radius_params, err_radius_params
         except IOError:
             pass
     else:
@@ -1213,7 +1351,6 @@ def run_iteration(starlist,\
     # Creates the EW file needed by MOOG.
     #########################################################################
 
-    #os.system('bash moog_linelist.bash ' + star + '.ares ')
     create_linelist(star + '.ares')
     nFeI, nFeII = nlines(star)
 
@@ -1249,140 +1386,106 @@ def run_iteration(starlist,\
     #########################################################################
     # Computes the temperature, logg, metallicity and microturbulence
     #########################################################################
-    use_vt = 'no'
 
-
-    T, logg, xmetal, micro, exception = calc_params(star, hold, init_vals, \
-                                                    debug, log_f, \
-                                                    set_boundaries, \
-                                                    vals_boundaries)
-
-    if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold) == False) \
-            and (nFeI > 10):
-        hold_c1 = hold[:]
-        init_vals_c1 = init_vals[:]
-        hold_c1.append('velocity')
-        init_vals_c1[3] = 1.2
-        if debug:
-            log_f.debug('Trying again with vt = 1.2 km/s.')
-        T, logg, xmetal, micro, exception = calc_params(star, \
-                                                    hold_c1, init_vals_c1, \
-                                                    debug, log_f, \
-                                                    set_boundaries,\
-                                                    vals_boundaries)
-        use_vt = 'yes'
-
-    # Apply correction for solar values
-
-    if ('temperature' in hold) == False:
-        T = T + 26
-    if ('metallicity' in hold) == False:
-        xmetal = xmetal + 0.02
-    if ('pressure' in hold) == False:
-        logg = logg + 0.06
-    if ('velocity' in hold) == False:
-        micro = micro + 0.08
-
-
-    if debug:
-        log_f.debug('Values after correcting for the Sun are: '\
-                    'T=%f, logg=%f, xmetal=%f, micro = %f',\
-                    T, logg, xmetal, micro)
-
+    T, logg, xmetal, micro, exception, use_vt, use_casagrande, err_init_vals,\
+        log_f = calc_atm_params(star, hold, init_vals, err_init_vals, debug, log_f, \
+                                set_boundaries, vals_boundaries, try_with_vt_hold, \
+                                check_with_photometry_T,relation_temp, photometry, inst, nFeI, T_c)
 
 
     #########################################################################
-    # Computes the temperature using the relations in Casagrande et al. 2010.
-    # If the difference in T is greater than 500 K, compute everything again
-    # but fixing the temperature to the one from Casagrande et al. 2010.
+    # Compute uncertainties for the atmospheric parameters
     #########################################################################
 
-    use_casagrande = 'no'
+    if err == True:
 
-    if check_with_casagrande == True:
-        if abs(T_c - T) > 200. or (exception == 2):
-            if T_c > 3000. and T_c < 10000.:
-                use_casagrande = 'yes'
+        err_vt, err_vt2, err_T, err_T2,\
+        err_met, err_logg = obtain_errors(star, T, xmetal, logg, micro,\
+                                      debug, log_f,\
+                                      save_coefs_error,\
+                                      make_plots_coefs_error,\
+                                      err_init_vals, hold,\
+                                      use_casagrande, use_vt)
 
-                hold_c = hold[:]
-                hold_c.append('temperature')
-                init_vals_c = init_vals[:]
-                init_vals_c[0] = T_c
-                if debug == True:
-                    log_f.debug('Difference between T_c and T is larger than 500 K '\
-                                'or exception is equal to two.')
-                    log_f.debug('Computing the parameters again but using T_c.')
+    #########################################################################
+    # Compute mass, radius, age and spectroscopic logg,
+    # and recomputing the atmospheric parameters if the logg measurements
+    # do not agree
+    #########################################################################
 
-                T, logg, xmetal, micro, exception = calc_params(star, \
-                                                    hold_c, init_vals_c, \
-                                                    debug, log_f, \
-                                                    set_boundaries,\
-                                                    vals_boundaries)
+    print '\t\tComputing mass...'
 
-                use_vt = 'no'
+    use_logg_p = 'no'
 
-                if (exception == 2) and (try_with_vt_hold == True) and (('velocity' in hold_c) == False) \
-                    and (nFeI > 10):
-                    hold_c.append('velocity')
-                    init_vals_c[3] = 1.2
-                    if debug:
-                        log_f.debug('Trying again with vt = 1.2 km/s.')
-                        T, logg, xmetal, micro, exception = calc_params(star, \
-                                                    hold_c, init_vals_c, \
-                                                    debug, log_f, \
-                                                    set_boundaries,\
-                                                    vals_boundaries)
-                        use_vt = 'yes'
+    if use_hold_mass == 0:
 
-                #Apply correction for solar values
+        if err == False:
+            err_T, err_logg, err_met = 100., 0.25, 0.25
 
-                if ('temperature' in hold_c) == False:
-                    T = T + 26
-                if ('metallicity' in hold_c) == False:
-                    xmetal = xmetal + 0.02
-                if ('pressure' in hold_c) == False:
-                    logg = logg + 0.06
-                if ('velocity' in hold_c) == False:
-                    micro = micro + 0.08
+        if mass_from_file:
+            if os.path.isfile('./isochrones/' + star + '_samples.h5') == False:
+                mass_from_file = False
 
+        mass, err_mass1, err_mass2, age, err_age1, err_age2, logg_iso, err_logg_iso1, err_logg_iso2,\
+                        radius, err_radius1, err_radius2 = find_mass_age(star, T, logg, xmetal,\
+                                                    err_T, err_logg, err_met, exception, photometry,\
+                                                    debug, log_f, mass_from_file = mass_from_file)
+
+        if err_logg_iso1 == 0.0:
+            err_logg_iso1 = 0.5
+        if err_logg_iso2 == 0.0:
+            err_logg_iso2 = 0.5
+
+
+        if recompute_with_logg_p and (exception == 1) and (logg_iso < 5.0):
+            if np.abs(logg-logg_iso) > 0.22:
+                use_logg_p = 'yes'
                 if debug:
-                    log_f.debug('Values after correcting for the Sun are: '\
-                                'T=%f, logg=%f, xmetal=%f, micro = %f',\
-                                 T, logg, xmetal, micro)
+                    log_f.debug('Difference between the spectroscopic and photometric logg '\
+                                'are too large, recomputing the parameters again but using logg_iso.')
+                print '\t\tRecomputing with logg = logg_iso'
 
+                hold.append('pressure')
+                init_vals[1] = logg_iso
+                err_init_vals[1] = max(err_logg_iso1, err_logg_iso2)
 
-            else:
-                if debug == True:
-                    log_f.debug('Temperature from photometry outside of the permitted ranges. '\
-                                'Stopping the calculation.')
+                T, logg, xmetal, micro, exception, use_vt, use_casagrande, err_init_vals,\
+                    log_f = calc_atm_params(star, hold, init_vals, err_init_vals, debug, log_f, \
+                                            set_boundaries, vals_boundaries, try_with_vt_hold, \
+                                            check_with_photometry_T, relation_temp, photometry, inst, nFeI, T_c)
 
-        else:
-            if debug == True:
-                #log_f.debug('Temperature from photometry could not be properly computed. '\
-                #            'Check star name or coordinates.')
-                log_f.debug('There is agreement between the obtained temperature and from photometry.')
+                if err == True:
 
+                    err_vt, err_vt2, err_T, err_T2,\
+                    err_met, err_logg = obtain_errors(star, T, xmetal, logg, micro,\
+                                                debug, log_f,\
+                                                save_coefs_error,\
+                                                make_plots_coefs_error,\
+                                                err_init_vals, hold,\
+                                                use_casagrande, use_vt)
 
+                if err == False:
+                    err_T, err_logg, err_met = 100., 0.25, 0.25
 
+                if err_logg == 0.0:
+                    err_logg = 0.5
+
+                mass, err_mass1, err_mass2, age, err_age1, err_age2, logg_iso, err_logg_iso1, err_logg_iso2,\
+                                radius, err_radius1, err_radius2 = find_mass_age(star, T, logg, xmetal,\
+                                                            err_T, err_logg, err_met, exception, photometry,\
+                                                            debug, log_f, mass_from_file = mass_from_file)
 
 
     #########################################################################
     # Computes the abundances of elements
     #########################################################################
 
+
     ab_FeI, ep, dif, rw, nfailed = compute_average_abundance(star, w = True)
 
-    if use_casagrande == 'yes':
+    ab_FeI = ab_FeI - 7.50
+    ab_FeII = ab_FeI - dif
 
-        #nFeI, nFeII = nlines(star)
-        ab_FeI = ab_FeI - 7.50
-        ab_FeII = ab_FeI - dif
-
-    else:
-
-        #nFeI, nFeII = nlines(star)
-        ab_FeI = ab_FeI - 7.50 + 0.02
-        ab_FeII = ab_FeI - dif
 
     if ab == True:
         ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI, ab_AlI, dev_AlI, nAlI,\
@@ -1391,61 +1494,6 @@ def run_iteration(starlist,\
         ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, ab_ZnI, dev_ZnI, nZnI,\
         exception_Fe, exception_Ti = calc_ab(star, T, logg, xmetal, micro)
 
-
-        # Corrects the abundances for the solar values found by this same method.
-        # Values obtained after running the code using solar spectra,
-        # and computing the average values using the code solar_values.py
-
-        ab_NaI = ab_NaI + 0.01
-        ab_MgI = ab_MgI - 0.068
-        ab_AlI = ab_AlI + 0.17
-        ab_SiI = ab_SiI + 0.04
-        ab_CaI = ab_CaI + 0.09
-        ab_TiI = ab_TiI + 0.009
-        ab_TiII = ab_TiII + 0.009
-        ab_CrI = ab_CrI + 0.05
-        ab_MnI = ab_MnI - 0.03
-        ab_NiI = ab_NiI - 0.03
-        ab_CuI = ab_CuI - 0.16
-        ab_ZnI = ab_ZnI - 0.086
-
-    #########################################################################
-    # Compute uncertainties for the atmospheric parameters
-    #########################################################################
-
-    if err == True:
-
-        if save_coefs_error == True:
-            file_coefs_error = open('./output/coeffs_error_files/%s_coefs_error.dat' % star, 'w')
-            file_coefs_error.writelines('%s\tT=%f, logg=%f, [Fe/H]=%f, vt=%f, exception=%d\n' %\
-                                        (star, T, logg, xmetal, micro, exception))
-
-        if make_plots_coefs_error == True:
-            if not os.path.exists('./output/plots_err'):
-                os.makedirs('./output/plots_err')
-
-        err_vt, err_vt2, err_T, err_T2,\
-        err_met, err_logg = obtain_errors(star, T, xmetal, logg, micro,\
-                                          debug, log_f,\
-                                          save_coefs_error,\
-                                          file_coefs_error,\
-                                          make_plots_coefs_error, use_casagrande, err_T_c)
-
-        if err_vt > 10.:
-            err_vt = 10.
-        if err_vt2 > 10.:
-            err_vt2 = 10.
-        if err_T > 500.:
-            err_T = 500.
-        if err_T2 > 500.:
-            err_T2 = 500.
-        if err_met > 5.:
-            err_met = 5.
-        if err_logg > 10.:
-            err_logg = 10.
-
-        if save_coefs_error == True:
-            file_coefs_error.close()
 
 
     #########################################################################
@@ -1480,7 +1528,6 @@ def run_iteration(starlist,\
 
                 vs, err_vs, vm, err_vm = cb.calc_broadening(star, T, xmetal, logg, micro, ab_NiI,\
                                                             err_T, err_logg, err_met, dev_NiI)
-
                 if debug:
                     log_f.debug('Finished computing vsini and vmac.')
 
@@ -1500,58 +1547,9 @@ def run_iteration(starlist,\
     if debug == True:
         log_f.debug('vsini = %f +/- %f, vmac = %f +/- %f', vs, err_vs, vm, err_vm)
 
-    #########################################################################
-    # Compute mass, age and spectroscopic logg
-    #########################################################################
 
-    print '\t\tComputing mass...'
 
     if debug == True:
-        log_f.debug('Computing the mass, age, and photometric logg.')
-
-    if use_hold_mass == 0:
-
-        if err == False:
-            err_T = 100.
-            err_logg = 0.25
-            err_met = 0.25
-
-        if exception == 1:
-
-            photometry_mass = {}
-            mags = ['B', 'V', 'R', 'I', 'J', 'H', 'K', 'b', 'y', 'Bt', 'Vt']
-            photo_keys = photometry.keys()
-            for m in mags:
-                if m in photo_keys:
-                    c = photometry[m][0] - photometry[m][4]
-                    photometry_mass[m] = (c, max(photometry[m][1], 0.01))
-
-            if 'parallax' in photo_keys:
-                photometry_mass['parallax'] = (photometry['parallax'][0].value, \
-                                               photometry['parallax'][1].value)
-
-            if debug:
-                log_f.debug('Values used for finding mass and age are: '\
-                            '%s, %f, %f, %f, %f, %f, %f',\
-			    star, T, logg, xmetal, err_T, err_logg, err_met)
-		log_f.debug('Photometry used is: %s', photometry_mass)
-
-
-            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius = find_mass_age(star,
-                            T, logg, xmetal, err_T, err_logg, err_met, photometry_mass,
-                            mass_from_file = mass_from_file)
-
-            del photometry_mass
-
-        else:
-            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            if debug:
-                log_f.debug('Stopping the calculation because exception = 2.')
-
-    if debug == True:
-        log_f.debug('Obtained M=%f +/- %f, Age=%f +/- %f, logg=%f +/- %f, radius=%f +/- %f',\
-                    mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius)
-
         log_f.debug('Finished with star %s', star)
 
     del photometry
@@ -1623,8 +1621,9 @@ def run_iteration(starlist,\
             ab_TiII, dev_TiII, nTiII, ab_CrI, dev_CrI, nCrI, ab_MnI, dev_MnI, nMnI,\
             ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, ab_ZnI, dev_ZnI, nZnI,\
             exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt, err_vt2,\
-            vs, err_vs, vm, err_vm, mass, err_mass,\
-            age, err_age, s_logg, err_s_logg, radius, err_radius, use_casagrande, use_vt)
+            vs, err_vs, vm, err_vm, mass, err_mass1, err_mass2, age, err_age1, err_age2,\
+            logg_iso, err_logg_iso1, err_logg_iso2, radius, err_radius1, err_radius2,\
+            use_casagrande, use_vt, use_logg_p, T_c, err_T_c, relation_temp)
 
 
 
@@ -1657,14 +1656,13 @@ def calc_ab(star, T, logg, xmetal, micro):
     # Creates the EW file needed by MOOG.
     #########################################################################
 
-    #os.system('bash moog_linelist_ab.bash ' + star + '_ab.ares ')
     create_linelist(star + '_ab.ares', ab = True)
 
     #########################################################################
     # Modify abfind.par
     #########################################################################
 
-    
+
     cmd = 'cp ./MOOGFEB2017/abfind.par ./MOOGFEB2017/ab_%s_ab.par' % (star)
     os.system(cmd)
 
@@ -1722,7 +1720,6 @@ def calc_ab(star, T, logg, xmetal, micro):
 def runMOOG_ab(starname, T, g, m, vt, use_w = False):
     use_w = True
     interpol(starname, T, g, m, vt)
-    #cmd = 'bash run_moog_ab.bash abfind_%s.par' % starname
     cmd = 'MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/ab_%s.par\n\n\n\n\n\n\n\n\n\n\n\n\n\nEOF' % starname
     os.system(cmd)
     output = open('./output/' + starname + '_out.test')

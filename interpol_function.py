@@ -219,7 +219,6 @@ def interpol(starname, xteff, xlogg, xmetal, micro):
                     e = sys.exc_info()[0]
                     print 'Error is %s' % e, ametal, G[ig]
                     raise
-                    #write_to_page( "<p>Error: %s</p>" % e )
 
                 if (int(atemp1) > max_temp) or (int(atemp2) > max_temp) or (int(atemp3) > max_temp) or (int(atemp4) > max_temp):
                     indice = int(np.where(temps == max_temp)[0])
@@ -317,10 +316,3 @@ def interpol(starname, xteff, xlogg, xmetal, micro):
         del TabX, nbreak
 
     del tabA, tabB, tabC, tabD, tab1, tab2, tab3, tab4, tab, TabY, T, G, XM
-
-
-if __name__ == '__main__':
-    #f = '/Users/msoto/kurucz.harvard.edu/grids/gridm05odfnew/am05k2odfnew.dat'
-    #split_file(f, 'm05', '/Users/msoto/kurucz.harvard.edu/grids/gridm05odfnew/')
-    tab = read_file('/Users/msoto/kurucz.harvard.edu/grids/gridm05odfnew/m05_5500_5.0.dat', 4, 5)
-    print tab

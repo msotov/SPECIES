@@ -412,7 +412,7 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_HIRES = spectra_matias(path_spectra + starname_HIRES, abundances = abundances)
+                snr_HIRES = spectra_sav(path_spectra + starname_HIRES, abundances = abundances)
 
                 if snr_HIRES != 0.:
                     modify_file(starname_HIRES, 'sav', snr_HIRES, abundances = abundances)
@@ -637,17 +637,3 @@ def spectra(lista_estrellas, skip = True,\
         calc_abundance = calc_abundance + inst_abundance
 
     return total_spectra, calc_abundance
-
-
-if __name__ == '__main__':
-    import time
-    start1 = time.time()
-    modify_file('prueba', 'harps', 150, abundances = False)
-    end1 = time.time()
-
-    start2 = time.time()
-    modify_file2('prueba', 'harps', 150, abundances = False)
-    end2 = time.time()
-
-    print end1 - start1
-    print end2 - start2

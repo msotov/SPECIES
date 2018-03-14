@@ -15,8 +15,6 @@ import matplotlib.pyplot as plt
 import pyfits, os, collections
 from scipy.optimize import curve_fit
 from PyAstronomy import pyasl
-#from matplotlib import rcParams
-#rcParams['font.family'] = 'serif'
 
 plt.style.use(['classic'])
 
@@ -56,7 +54,6 @@ def continuum_det(x, y): # Substracts the continuum and normalizes
     rejt = 0.98
     ini_cont = [max(y), 0., 0.]
     coefs,_ = curve_fit(cont, x, y, p0 = ini_cont)
-    #ynorm = [0. + cont(x[i], coefs[0], coefs[1], coefs[2]) for i in range(nx)]
     ynorm = cont(x, *coefs)
 
     for jk in range(5):
@@ -70,18 +67,13 @@ def continuum_det(x, y): # Substracts the continuum and normalizes
         vecx = np.array(vecx)
         vecy = np.array(vecy)
         coefs,_ = curve_fit(cont, vecx, vecy, p0 = ini_cont)
-        #ynorm = [0. + cont(x[i], coefs[0], coefs[1], coefs[2]) for i in range(nx)]
         ynorm = cont(x, *coefs)
 
         del vecx, vecy
 
-    #ynorm = [y[i]/cont(x[i], coefs[0], coefs[1], coefs[2]) for i in range(nx)]
-    #ynorm = [(ynorm[i] - 1.) for i in range(nx)]
 
     ynorm = y/(cont(x, *coefs))
     ynorm = ynorm - 1.0
-
-    #del vecx, vecy
 
     return np.array(ynorm)
 
@@ -130,7 +122,8 @@ def ccf(nombre, x_range, data_range2):
     if make_plot:
         fontname = 'Courier New'
         matplotlib.rcParams.update({'font.family': fontname, 'font.weight': 'medium'})
-        ticks_font = matplotlib.font_manager.FontProperties(family=fontname, style='normal', size=10, weight='medium', stretch='normal')
+        ticks_font = matplotlib.font_manager.FontProperties(family=fontname, style='normal', \
+                                                size=10, weight='medium', stretch='normal')
 
         if not os.path.exists('./Spectra/plots_ccf'):
             os.makedirs('./Spectra/plots_ccf')
@@ -178,7 +171,6 @@ def ccf(nombre, x_range, data_range2):
             new_name = nombre[indice + 1:]
             nombre = new_name
         plt.tight_layout()
-        #fig.savefig('./Spectra/plots_ccf/' + nombre + '.ps')
         fig.savefig('./Spectra/plots_ccf/' + nombre + '_ccf.pdf')
         plt.close('all')
 
@@ -202,7 +194,6 @@ def plot_lines(x, data, lines, name_lines, nombre, savefigure = True, prev_fig =
 
 
     if prev_fig == None:
-        #fig, ax = plt.subplots()
         fig = plt.figure()
     else:
         fig = prev_fig
@@ -245,7 +236,6 @@ def plot_lines(x, data, lines, name_lines, nombre, savefigure = True, prev_fig =
             indice = nombre.index('/')
             new_name = nombre[indice + 1:]
             nombre = new_name
-        #fig.savefig('./Spectra/plots_fit/' + nombre + '.ps')
         fig.savefig('./Spectra/plots_fit/' + nombre + '_fit_lines.pdf')
     else:
         plt.show()
@@ -277,6 +267,7 @@ def restframe(archivo):
 
     if len(data_range) == 0:
         print '\t\tWavelength range to correct to restframe is not present. Cannot create the _res.fits file.'
+        hdulist.close()
 
     else:
         if np.mean(data_range) != 0.:
@@ -302,8 +293,6 @@ def restframe(archivo):
             delta = delta/(1. + rv/c)
             x0 = x0/(1. + rv/c)
 
-        #x2 = [x[i]/(1. + rv/c) for i in range(len(x))]
-        #x2 = np.array(x2)
         x2 = np.copy(x)/(1. + rv/c)
         z = rv/c
 
@@ -337,7 +326,7 @@ def restframe(archivo):
                             break
                     x3 = [x2[i]/(1. + z2) for i in range(len(x2))]
                     x2 = np.array(x3)
-                    fig = plot_lines(x2, data, lineas, name_lineas, nombre, savefigure = False)#,prev_fig=fig,figclear=True)
+                    fig = plot_lines(x2, data, lineas, name_lineas, nombre, savefigure = False)
 
                     if z2 != (-1.):
                         delta = delta/(1. + z2)
@@ -357,11 +346,11 @@ def restframe(archivo):
 
         #################################################
 
-        #print '\t\tFinal value to use is z = %f' % z
 
         header['CRPIX1'] = 1.
         header['CRVAL1'] = x2[0]
         header['CDELT1'] = float(delta)
+        header.set('RV', rv, after='CDELT1')
 
         try:
             pyfits.writeto(nombre + '_res.fits', data = data, header = header, clobber = True)
@@ -371,6 +360,3 @@ def restframe(archivo):
         hdulist.close()
 
         del x, data, i_range, x_range, data_range, x2, header, hdulist, delta, x0, rv
-
-if __name__ == '__main__':
-    restframe('./Spectra/HD142_harps.fits')

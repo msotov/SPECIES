@@ -1,12 +1,10 @@
-import os, re, time
+import os, re, time, pickle
 from astropy.io import fits, ascii
 from interpol_function import interpol
 import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib
 import matplotlib.pyplot as plt
-#from matplotlib import rcParams
-#rcParams['font.family'] = 'serif'
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import convolve1d
 from PyAstronomy import pyasl
@@ -164,9 +162,12 @@ class Vsini(object):
 
 
                     w = np.zeros(2 * self.radius + 1, float)
+                    if self.ci1 > len(self.data_target[:,0]):
+                        w = np.zeros(2 * self.radius, float)
                     w[:self.radius] = self.bwing_w
                     w[self.radius+1:] = self.rwing_w
                     w[self.radius] = self.center_w
+                    #print len(w), len(self.data_target[self.ci0:self.ci1,1]), len(model_interp)
                     S[k] = np.sum(w * (self.data_target[self.ci0:self.ci1,1] - \
                             model_interp)**2.) / np.sum(w)
 
@@ -190,6 +191,8 @@ class Vsini(object):
 
 
                     w = np.zeros(2 * self.radius + 1, float)
+                    if self.ci1 > len(self.data_target[:,0]):
+                        w = np.zeros(2 * self.radius, float)
                     w[:self.radius] = self.bwing_w
                     w[self.radius+1:] = self.rwing_w
                     w[self.radius] = self.center_w
@@ -248,6 +251,8 @@ class Vsini(object):
 
         # Creating the weights vector
         w = np.zeros(2 * self.radius + 1, float)
+        if self.ci1 > len(self.data_target[:,0]):
+            w = np.zeros(2 * self.radius, float)
         w[:self.radius] = self.bwing_w
         w[self.radius+1:] = self.rwing_w
         w[self.radius] = self.center_w
@@ -752,7 +757,7 @@ class Driver(object):
             f.write("   %i %f\n" % (self.Z, self.abunds))
         f.write("isotopes   0  1\n")
         f.write("synlimits\n")
-        f.write(" %.1f %.1f %.2f %.1f\n" % (self.syn_start, self.syn_end,
+        f.write(" %.2f %.2f %.2f %.1f\n" % (self.syn_start, self.syn_end,
                                             self.step, self.opac))
         f.write("obspectrum  5\n")
         f.write("plotpars  1\n")
@@ -770,14 +775,20 @@ class Driver(object):
     def change_vsini(self, grid_v):
 
         self.create_batch()
-        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
         os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
-        model = np.loadtxt(self.smoothed_out, skiprows = 2)
-        synth_wl = model[:,0]
-        synth_flux = model[:,1]
+        try:
+            model = np.loadtxt(self.smoothed_out, skiprows = 2)
+            synth_wl = model[:,0]
+            synth_flux = model[:,1]
+        except:
+            model = []
+            synth_wl = np.arange(self.syn_start, self.syn_end, self.step)
+            synth_flux = np.zeros(synth_wl.size)
 
-        synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
-            self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
+        if len(np.unique(synth_flux)) > 1:
+
+            synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
+                self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
 
 
         self.model_vsini = {}
@@ -804,15 +815,20 @@ class Driver(object):
         self.abunds = a
 
         self.create_batch()
-        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
         os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
-        model = np.loadtxt(self.smoothed_out, skiprows = 2)
-        synth_wl = model[:,0]
-        synth_flux = model[:,1]
+        try:
+            model = np.loadtxt(self.smoothed_out, skiprows = 2)
+            synth_wl = model[:,0]
+            synth_flux = model[:,1]
+        except:
+            model = []
+            synth_wl = np.arange(self.syn_start, self.syn_end, self.step)
+            synth_flux = np.zeros(synth_wl.size)
 
         if self.vsini > 0.0:
-            synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
-                self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
+            if len(np.unique(synth_flux)) > 1:
+                synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
+                    self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
 
             conv_flux = pyasl.fastRotBroad(synth_wl, synth_flux, self.dark, self.vsini)
 
@@ -834,16 +850,22 @@ class Driver(object):
         """
         self.create_batch()
 
-        #os.system('bash run_moog_synth.bash %s_synth.par' % self.name)
         os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/%s_synth.par\n\nEOF' % self.name)
 
-        self.model = np.loadtxt(self.smoothed_out, skiprows=2)
-        synth_wl = self.model[:,0]
-        synth_flux = self.model[:,1]
+        try:
+
+            self.model = np.loadtxt(self.smoothed_out, skiprows=2)
+            synth_wl = self.model[:,0]
+            synth_flux = self.model[:,1]
+        except:
+            self.model = []
+            synth_wl = np.arange(self.syn_start, self.syn_end, self.step)
+            synth_flux = np.zeros(synth_wl.size)
 
         if self.vsini > 0.0:
-            synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
-                self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
+            if len(np.unique(synth_flux)) > 1:
+                synth_wl, synth_flux, self.obs_wl, self.obs_flux = \
+                    self.smart_cut(synth_wl, synth_flux, self.obs_wl, self.obs_flux)
 
             conv_flux = pyasl.fastRotBroad(synth_wl, synth_flux, self.dark, self.vsini)
 
@@ -965,12 +987,10 @@ class arr_manage(object):
 
 def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, err_met, err_ni):
 
+    err_T = 100.
     vmac, err_vmac = calc_vmac((Teff, err_T), (logg, err_logg))
-    vmac = vmac + 0.07
-    #vmac += 0.382 + 0.027
     vsini, err_vsini = calc_vsini(starname, Teff, met, logg, micro, vmac, ab_ni, err_met, err_ni)
 
-    #print vmac, err_vmac, vsini, err_vsini
 
     if len(vsini) == 0 or np.all(vsini == 0.0) or np.all(err_vsini == 0.0):
         i = np.where((vmac != 0.0) & (err_vmac != 0.0))[0]
@@ -986,10 +1006,13 @@ def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, er
         vmac_final = np.mean(vmac[i])
         err_vmac_final = np.mean(err_vmac[i])/np.sqrt(float(len(i)))
 
-        vsini_final = np.mean(vsini[i]) + 0.1 + 0.02 - 0.36
+        vsini_final = np.mean(vsini[i])
         err_vsini_final = np.sqrt(1./(1./(np.sum(err_vsini[i]**2.) + err_vmac_final**2.)))
 
     del i, vmac, err_vmac, vsini, err_vsini
+
+    if np.isnan(err_vsini_final):
+        err_vsini_final = 0.0
 
     return vsini_final, err_vsini_final, vmac_final, err_vmac_final
 
@@ -1125,13 +1148,11 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
             kwargs = {'star_name' : starname}
 
             j = (x > (w - 0.8)) & (x < (w + 0.8))
-            #kwargs['perf_radius'] = 35
 
             x_l = x[j]
             y_l = data[j]
 
             k = (x > (w - 0.5)) & (x < (w+0.5))
-            #k2 = ~k
 
             i_r = int(np.floor(len(x[k])/2))
             kwargs['perf_radius'] = i_r
@@ -1141,7 +1162,6 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
                 new_y_l = continuum_det(x_l, y_l)
 
                 popt,_ = curve_fit(f_total, x_l, new_y_l, p0 = (-max(y_l)/min(y_l), w, 0.2, 0.0, max(y_l)))
-                #print w, popt[1]
                 if popt[1] > (w + 0.3) or popt[1] < (w - 0.3):
                     x_shift = 0.0
                 else:
@@ -1149,65 +1169,58 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
 
                 new_x_l = x_l + x_shift
 
-            except RuntimeError:
+                del popt
 
-                popt,_ = curve_fit(f_total, x[j], data[j], p0 = (-max(data[k])/min(data[k]), w, 0.2, 0.0, max(data[j])))
-                y_polinomial = f_polinomial(x_l, *popt[3:])
-                #print w, popt[1]
+            except (RuntimeError, TypeError):
 
-                if popt[1] > (w + 0.3) or popt[1] < (w - 0.3):
-                    x_shift = 0.0
-                else:
-                    x_shift = w - popt[1]
+                try:
+                    popt,_ = curve_fit(f_total, x[j], data[j], p0 = (-max(data[k])/min(data[k]), w, 0.2, 0.0, max(data[j])))
+                    y_polinomial = f_polinomial(x_l, *popt[3:])
 
-                new_x_l = x_l + x_shift
-                new_y_l1 = y_l/f_total(x_l, *popt)
+                    if popt[1] > (w + 0.3) or popt[1] < (w - 0.3):
+                        x_shift = 0.0
+                    else:
+                        x_shift = w - popt[1]
 
-                popt2,_ = curve_fit(f_polinomial, new_x_l, new_y_l1, p0 = (0.0, 1.0))
-                y_polinomial2 = f_polinomial(new_x_l, *popt2)
+                    new_x_l = x_l + x_shift
+                    new_y_l1 = y_l/f_total(x_l, *popt)
 
-                new_y_l = y_l/y_polinomial/y_polinomial2
+                    popt2,_ = curve_fit(f_polinomial, new_x_l, new_y_l1, p0 = (0.0, 1.0))
+                    y_polinomial2 = f_polinomial(new_x_l, *popt2)
 
-                del popt2, y_polinomial, y_polinomial2, new_y_l1
+                    new_y_l = y_l/y_polinomial/y_polinomial2
+
+                    del popt2, y_polinomial, y_polinomial2, new_y_l1, popt
+
+                except RuntimeError:
+
+                    new_x_l = x_l[:]
+                    new_y_l = y_l[:]
 
 
             kwargs['badfit_tol'] = 30
 
-            '''
-            fig,(ax1,ax2) = plt.subplots(2,1)
-            ax1.plot(x_l, y_l)
-            #ax1.plot(x_l, y_polinomial)
-            #ax1.plot(x_l, f_total(x_l, *popt))
-            ax1.axvline(w-0.3)
-            ax1.axvline(w+0.3)
-            ax1.axvline(w)
-            ax2.plot(new_x_l, new_y_l)
-            #ax2.plot(new_x_l, y_polinomial2)
-            fig.savefig('./plots_broadening/%s_%f.pdf' % (starname, w))
-            plt.close('all')
-            '''
-
-            #press = raw_input()
 
             ascii.write([new_x_l, new_y_l], './Spectra/%s_%d.dat' % (starname, l),\
                         format = 'fixed_width_no_header', overwrite = True, delimiter = '\t')
             SN = compute_snr(new_x_l, new_y_l, w)
 
-            #del j, x_l, y_l, popt, y_polinomial, x_shift, new_x_l, new_y_l, new_y_l1, popt2, y_polinomial2
-            del j, x_l, y_l, popt, new_x_l, new_y_l
+            del j, x_l, y_l, new_x_l, new_y_l
 
             if resolution is None:
 
                 if inst == 'harps':
-                    gauss = w/115000.# 2.*np.sqrt(2.*np.log(2.))*w/120000.
+                    gauss = w/115000.
                 elif inst == 'feros' or inst == 'feros_o':
                     gauss = w/48000.
                 elif inst == 'uves':
                     gauss = w/110000.
-                elif inst == 'hires':
+                elif (inst == 'hires') or (inst == 'HIRES'):
                     gauss = w/67000.
                 elif inst == 'coralie':
                     gauss = w/60000.
+                elif inst == 'psf':
+                    gauss = w/38000.
                 else:
                     gauss = w/60000.
 
@@ -1215,50 +1228,54 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
                 gauss = w/float(resolution)
 
             spec_window = np.array([w-1.0, w+1.0])
-            vrot = Vsini(spec_window, gauss, v_macro[l], line_file, l, SN, **kwargs)
+            if v_macro[l] > 0.0:
+                vrot = Vsini(spec_window, gauss, v_macro[l], line_file, l, SN, **kwargs)
 
 
-            kwargs2 = {'a_guess' : np.array([(lines_ab['%.3f' % w]) - 1.5*max(0.1,dev_ab['%.3f' % w]), (lines_ab['%.3f' % w]) + 1.5*max(0.1,dev_ab['%.3f' % w])]),\
-                       'v_guess' : np.array([0.1, 10.]),\
-                       'save' : True,\
-                       'N' : 30,\
-                       'v_low_limit' : 0.1,\
-                       'max_i' : 30}
+                kwargs2 = {'a_guess' : np.array([(lines_ab['%.3f' % w]) - 1.5*max(0.1,dev_ab['%.3f' % w]), (lines_ab['%.3f' % w]) + 1.5*max(0.1,dev_ab['%.3f' % w])]),\
+                           'v_guess' : np.array([0.1, 10.]),\
+                           'save' : True,\
+                           'N' : 30,\
+                           'v_low_limit' : 0.1,\
+                           'max_i' : 30}
 
 
-            vrot = vrot.find(**kwargs2)
-            #if vrot.best_v <= min(vrot.v_grid):
-            #    vrot.badfit_status = True
+                vrot = vrot.find(**kwargs2)
 
-            info_line['data'] = vrot.MOOG.data
-            info_line['model'] = vrot.MOOG.model
-            info_line['vsini'] = vrot.best_v
-            info_line['v_grid'] = vrot.v_grid
-            info_line['S_v'] = vrot.S_v
-            info_line['a_grid'] = vrot.a_grid
-            info_line['S_a'] = vrot.S_a
-            info_line['abundance'] = vrot.best_a
-            info_line['yfit_v'] = vrot.yfit_v
-            info_line['yfit_a'] = vrot.yfit_a
-            info_line['badfit'] = vrot.badfit_status
-            data_lines[str(w)] = info_line
-            del info_line
-            if vrot.badfit_status == False:
-                vsini_lines[l] = vrot.best_v
-                err_vsini_lines[l] = np.sqrt(vrot.S)
+                info_line['data'] = vrot.MOOG.data
+                info_line['model'] = vrot.MOOG.model
+                info_line['vsini'] = vrot.best_v
+                info_line['v_grid'] = vrot.v_grid
+                info_line['S_v'] = vrot.S_v
+                info_line['a_grid'] = vrot.a_grid
+                info_line['S_a'] = vrot.S_a
+                info_line['abundance'] = vrot.best_a
+                info_line['yfit_v'] = vrot.yfit_v
+                info_line['yfit_a'] = vrot.yfit_a
+                info_line['badfit'] = vrot.badfit_status
+                data_lines[str(w)] = info_line
+                del info_line
+                if vrot.badfit_status == False:
+                    vsini_lines[l] = vrot.best_v
+                    err_vsini_lines[l] = np.sqrt(vrot.S)
 
-            del vrot
-            del kwargs, spec_window, kwargs2
+                del vrot
+                del kwargs, spec_window, kwargs2
             os.system('rm -f ./Spectra/%s_%d.dat' % (starname, l))
 
 
         new_data = data_o
+        del data_o
+
+    f = open('./plots_broadening/' + starname + '_data_lines.pkl', 'w')
+    pickle.dump(data_lines, f)
+    f.close()
 
     plot_vsini(starname, data_lines)
     plot_grids(starname, data_lines)
     plot_paper(starname, data_lines)
 
-    del new_data, data_lines, data_o, lines1, lines2, lines3, lines4, lines5, lines
+    del new_data, data_lines, lines1, lines2, lines3, lines4, lines5, lines
 
     os.system('rm -f ./atm_models/' + starname + '_v.atm')
     os.system('rm -f ./output/%s_long.out' % starname)
@@ -1311,7 +1328,6 @@ def calc_ab(starname, Teff, met, logg, micro, ab_ni, err_met, err_ni):
     cmd = 'cp ./MOOGFEB2017/abfind_%s_v_2.par ./MOOGFEB2017/abfind_%s_v.par' % (starname, starname)
     os.system(cmd)
 
-    #os.system('bash run_moog_abfind.bash abfind_%s_v.par' % starname)
     os.system('MOOGSILENT > temp.log 2>&1 << EOF\nMOOGFEB2017/abfind_%s_v.par\n\nEOF' % starname)
 
     output = open('./output/' + starname + '_v_out.test')
@@ -1334,7 +1350,7 @@ def calc_ab(starname, Teff, met, logg, micro, ab_ni, err_met, err_ni):
                     ab_id = 6.22 + ab_ni
                     dev_id = err_ni
                 ab[linea[0]] = float(linea[6]) - ab_id - met
-                dev[linea[0]] = dev_id# float(linea[7])
+                dev[linea[0]] = dev_id
         del m
 
 
@@ -1558,7 +1574,6 @@ def plot_grids(starname, data_lines):
                 ax[r][1] = plot_grid(ax[r][1], d['vsini'], lines[r], d['v_grid'], d['S_v'], d['yfit_v'], type_g = 'vsini', badfit = d['badfit'])
                 del d
 
-        #plt.tight_layout()
         fig.subplots_adjust(hspace=0.3, wspace=0.1, bottom=0.05, left=0.15, right=0.95, top=0.98)
         fig.savefig('./plots_broadening/%s_a_vsini.pdf' % starname)
         plt.close('all')
@@ -1672,18 +1687,3 @@ def plot_paper(starname, data_lines):
 
     except:
         pass
-
-
-#******************************************************************************
-#******************************************************************************
-#******************************************************************************
-#******************************************************************************
-
-
-if __name__ == '__main__':
-    import time
-    start = time.time()
-    vsini, err_vsini, vmac, err_vmac = calc_broadening('sun05_harps', 5754.160000, -0.015000, 4.416480, 0.654240, -0.016000, 39.748644, 0.269645, 0.080712, 0.034000)
-    print vsini, err_vsini, vmac, err_vmac
-    end = time.time()
-    print end-start, (end-start)/60.

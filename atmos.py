@@ -38,11 +38,11 @@ def create_atmos_params(star, hold, init_vals, debug, log_f,\
     temperature['ranges'] = [-999., -999.]
     temperature['name'] = 'temperature'
     if 'temperature' in dic_boundaries:
-        bound_min = max(vals_boundaries['temperature'][0], 3500.)
+        bound_min = vals_boundaries['temperature'][0]
         bound_max = min(vals_boundaries['temperature'][1], 9500.)
         temperature['boundaries'] = (bound_min, bound_max)
     else:
-        temperature['boundaries'] = (3500., 7000.)
+        temperature['boundaries'] = (3500., 9000.)
 
 
     gravity = {}
@@ -59,7 +59,7 @@ def create_atmos_params(star, hold, init_vals, debug, log_f,\
         bound_max = min(vals_boundaries['gravity'][1], 5.0)
         gravity['boundaries'] = (bound_min, bound_max)
     else:
-        gravity['boundaries'] = (0.5, 4.8)
+        gravity['boundaries'] = (0.5, 4.9)
 
 
 
@@ -144,6 +144,13 @@ class atmos:
         micro = self.atmos_params['velocity']['value']
         return (T, logg, met, micro)
 
+    def boundaries(self):
+        T_r = self.atmos_params['temperature']['boundaries']
+        logg_r = self.atmos_params['gravity']['boundaries']
+        met_r = self.atmos_params['metallicity']['boundaries']
+        micro_r = self.atmos_params['velocity']['boundaries']
+        return (T_r, logg_r, met_r, micro_r)
+
     def write_debug_moog(self):
         if self.atmos_params['debug']:
             f = self.atmos_params['file_debug']
@@ -171,7 +178,7 @@ class atmos:
 
     def check_correct_vals(self):
         output = self.atmos_params['moog']
-        if abs(output[0] - self.values()[2]) <= 0.002 and \
+        if abs(output[0] - self.values()[2]) <= 0.02 and \
             abs(output[1]) <= 0.002 and \
             abs(output[2]) <= 0.002 and \
             abs(output[3]) <= 0.002:
@@ -191,9 +198,11 @@ class atmos:
     def check_nout(self):
         nout = self.nout
         vals = self.values()
-        if vals[2] < (-3.0) or vals[2] > 1.0: nout += 1
-        if vals[1] < 0. or vals[1] > 5.: nout += 1
-        if vals[0] > 9500. or vals[0] < 3500.: nout += 1
+        boundaries = self.boundaries()
+
+        if vals[2] < boundaries[2][0] or vals[2] > boundaries[2][1]: nout += 1
+        if vals[1] < boundaries[1][0] or vals[1] > boundaries[1][1]: nout += 1
+        if vals[0] > boundaries[0][1] or vals[0] < boundaries[0][0]: nout += 1
         if nout == 3: # All parameters all out of ranges.
             self.write_debug_message('[Fe/H], T and log g are out of the possible ranges. Can not find final parameters.')
 
@@ -320,7 +329,6 @@ class atmos:
     def moog_output(self, output, nfail):
         self.atmos_params['moog'] = output
         self.atmos_params['nfailed'] = nfail
-        #return self.atmos_params
 
 
     def new_values(self, new_vals):
