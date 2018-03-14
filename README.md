@@ -2,7 +2,7 @@
 
 Spectroscopic Parameters and atmosphEric ChemIstriEs of Stars (SPECIES) is a code meant to compute stellar parameters and abundances by using high resolution echelle spectra. The whole calculation is done automatically, with the stellar spectrum being the only mandatory input. It handles data from several spectrographs (HARPS, FEROS, UVES, HIRES, PFS, CORALIE so far) and more than one star at the same time. 
 
-Please cite Soto & Jenkins 2017, in prep. if your use SPECIES for your code.
+Please cite Soto & Jenkins 2018, http://adsabs.harvard.edu/abs/2018arXiv180109698S if your use SPECIES for your work.
 
 Authors: Maritza Soto and James Jenkins.
 
