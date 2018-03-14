@@ -397,6 +397,7 @@ else:
     # Writes the results in the output files
     ############################################################################
 
+<<<<<<< HEAD
     data = Table([name_star, instrument, rv, xmetal, err_met, T, err_T,\
             logg, err_logg, micro, err_vt, nFeI, nFeII, exception, vs, err_vs,\
             vm, err_vm, ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI,\
@@ -420,6 +421,36 @@ else:
             'use_Tc', 'use_vt', 'use_iso_logg', 'err_vt2', 'err_T2',\
             'T_photo', 'err_T_photo', 'T_photo_relation'],\
             dtype = ['str', 'str', 'float', 'float', 'float', 'float', 'float', \
+=======
+    if save_as_ascii == True:
+        
+        data = Table([name_star, instrument, \
+            xmetal, err_met, T, err_T, logg, err_logg, micro, err_vt, \
+            nFeI, nFeII, exception, vs, err_vs, vm, err_vm, \
+            ab_NaI, dev_NaI, nNaI, ab_MgI, dev_MgI, nMgI,\
+            ab_AlI, dev_AlI, nAlI, ab_SiI, dev_SiI, nSiI, \
+            ab_CaI, dev_CaI, nCaI, ab_TiI, dev_TiI, nTiI, nTiII, \
+            ab_CrI, dev_CrI, nCrI, ab_MnI, dev_MnI, nMnI, \
+            ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, \
+            ab_ZnI, dev_ZnI, nZnI, exception_Fe, exception_Ti, \
+            ab_FeI, ab_FeII, \
+            mass, err_mass, age, err_age, s_logg, err_s_logg, radius, err_radius, \
+            use_Tc, use_vt, err_vt2, err_T2],\
+            names = ['Starname', 'Instrument', '[Fe/H]', 'err_[Fe/H]', \
+            'Temperature', 'err_T', 'logg', 'err_logg', 'vt', 'err_vt', \
+            'nFeI', 'nFeII', 'exception',\
+            'vsini', 'err_vsini', 'vmac', 'err_vmac',\
+            '[Na/H]', 'e_[Na/H]', 'nNaI', '[Mg/H]', 'e_[Mg/H]', 'nMgI', \
+            '[Al/H]', 'e_[Al/H]', 'nAlI', '[Si/H]', 'e_[Si/H]', 'nSiI', \
+            '[Ca/H]', 'e_[Ca/H]', 'nCaI', '[Ti/H]', 'e_[Ti/H]', 'nTiI', 'nTiII',\
+            '[Cr/H]', 'e_[Cr/H]', 'nCrI', '[Mn/H]', 'e_[Mn/H]', 'nMnI',\
+            '[Ni/H]', 'e_[Ni/H]', 'nNiI', '[Cu/H]', 'e_[Cu/H]', 'nCuI', \
+            '[Zn/H]', 'e_[Zn/H]', 'nZnI', 'exception_Fe', 'exception_Ti', \
+            '[FeI/H]', '[FeII/H]', 'Mass', 'err_mass', 'Age', 'err_age', \
+            'Photo_logg', 'err_photo_logg', 'Radius', 'err_radius', \
+            'use_Tc', 'use_vt', 'err_vt2', 'err_T2'],\
+            dtype = ['str', 'str', 'float', 'float', 'float', 'float', \
+>>>>>>> 575f4123776ec12847f0292febc6076d247e5c72
             'float', 'float', 'float', 'float', 'int', \
             'int', 'int', 'float', 'float', 'float', 'float', \
             'float', 'float', 'int', 'float', 'float', 'int', 'float', 'float', \
