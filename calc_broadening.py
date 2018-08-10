@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import convolve1d
 from PyAstronomy import pyasl
+from astropy.stats import sigma_clip
 
 plt.style.use(['classic'])
 fontname = 'Courier New'
@@ -989,13 +990,15 @@ def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, er
 
     err_T = 100.
     vmac, err_vmac = calc_vmac((Teff, err_T), (logg, err_logg))
+    #print vmac
+    #vmac, err_vmac = np.ones(len(vmac))*0.1, np.ones(len(vmac))*0.1
     vsini, err_vsini = calc_vsini(starname, Teff, met, logg, micro, vmac, ab_ni, err_met, err_ni)
 
 
     if len(vsini) == 0 or np.all(vsini == 0.0) or np.all(err_vsini == 0.0):
         i = np.where((vmac != 0.0) & (err_vmac != 0.0))[0]
-        vmac_final = np.mean(vmac[i])
-        err_vmac_final = np.mean(err_vmac[i])/np.sqrt(float(len(i)))
+        vmac_final = np.median(vmac[i])
+        err_vmac_final = np.median(err_vmac[i])/np.sqrt(float(len(i)))
         vsini_final = 0.0
         err_vsini_final = 0.0
 
@@ -1003,10 +1006,12 @@ def calc_broadening(starname, Teff, met, logg, micro, ab_ni, err_T, err_logg, er
 
         i = np.where((vmac != 0.0) & (vsini != 0.0) & (err_vmac != 0.0) & (err_vsini != 0.0))[0]
 
-        vmac_final = np.mean(vmac[i])
-        err_vmac_final = np.mean(err_vmac[i])/np.sqrt(float(len(i)))
+        vmac_final = np.median(vmac[i])
+        err_vmac_final = np.median(err_vmac[i])/np.sqrt(float(len(i)))
 
-        vsini_final = np.mean(vsini[i])
+        #i2 = sigma_clip(vsini[i], iters=1)
+
+        vsini_final = np.median(vsini[i])
         err_vsini_final = np.sqrt(1./(1./(np.sum(err_vsini[i]**2.) + err_vmac_final**2.)))
 
     del i, vmac, err_vmac, vsini, err_vsini
@@ -1039,6 +1044,14 @@ def calc_vmac(Teff, logg):
         err_vmac[i] = err_v
 
         del v, err_v
+
+    # E.1 from Melendez et al. 2012:
+    #vmac=np.zeros(5)+(13.499-0.00707*Teff[0]+9.2422*10**(-7)*Teff[0]**2.)
+    #err_vmac=np.zeros(5)+np.sqrt((2.*9.2422*10**(-7)*Teff[0]-0.00707)**2.*Teff[1]**2.)
+
+    # E.2 from Melendez et al. 2012
+    #vmac=np.zeros(5)+(3.50+(Teff[0]-5777.)/650.)
+    #err_vmac=np.zeros(5)+np.sqrt((1./650.)**2.*Teff[1]**2.)
 
     return vmac, err_vmac
 
@@ -1148,11 +1161,13 @@ def calc_vsini(starname, Teff, met, logg, micro, v_macro, ab_ni, err_met, err_ni
             kwargs = {'star_name' : starname}
 
             j = (x > (w - 0.8)) & (x < (w + 0.8))
+            #j = (x > (w - 2.0)) & (x < (w + 2.0))
 
             x_l = x[j]
             y_l = data[j]
 
             k = (x > (w - 0.5)) & (x < (w+0.5))
+            #k = (x > (w - 1.0)) & (x < (w+1.0))
 
             i_r = int(np.floor(len(x[k])/2))
             kwargs['perf_radius'] = i_r

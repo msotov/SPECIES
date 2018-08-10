@@ -8,14 +8,14 @@ from instruments import feros, feros_orders, harps,\
 #######################################################################
 #######################################################################
 
-def modify_file2(starname, instrument, snr, abundances = False):
-    path_ares = './EW/'
+def modify_file2(starname, instrument, snr, abundances = False, PATH_SPECTRA = './Spectra'):
+    PATH_EW = '../EW/'
 
     archivo_ares = open('./Spectra/mine.opt', 'r')
     archivo_ares_output = open('./Spectra/mine2.opt', 'w')
     for linea in archivo_ares:
         if linea[:8] == 'specfits':
-            linea = "specfits='%s_res.fits'\n" % (starname)
+            linea = "specfits='%s_res.fits'\n" % (os.path.join(os.path.relpath(PATH_SPECTRA, './Spectra'), starname))
         if linea[:11] == 'readlinedat':
             if abundances == False:
                 linea = "readlinedat='linelist.dat'\n"
@@ -23,9 +23,9 @@ def modify_file2(starname, instrument, snr, abundances = False):
                 linea = "readlinedat='lines_ab.dat'\n"
         if linea[:7] == 'fileout':
             if abundances == False:
-                linea = "fileout='../%s%s.ares'\n" % (path_ares, starname)
+                linea = "fileout='%s'\n" % (os.path.join(PATH_EW, starname + '.ares'))
             else:
-                linea = "fileout='../%s%s_ab.ares'\n" % (path_ares, starname)
+                linea = "fileout='%s'\n" % (os.path.join(PATH_EW, starname + '_ab.ares'))
         if linea[:4] == 'rejt':
             if instrument == 'uves':
                 rej1 = 1.-1./(snr[0][2])
@@ -46,17 +46,17 @@ def modify_file2(starname, instrument, snr, abundances = False):
 #######################################################################
 
 
-def modify_file(starname, instrument, snr, abundances = False):
-    path_ares = './EW/'
+def modify_file(starname, instrument, snr, abundances = False, PATH_SPECTRA = './Spectra'):
+    PATH_EW = '../EW/'
     output = open('./Spectra/mine2.opt', 'w')
 
-    output.writelines("specfits='%s_res.fits'\n" % starname)
+    output.writelines("specfits='%s_res.fits'\n" % (os.path.join(os.path.relpath(PATH_SPECTRA, './Spectra'), starname)))
     if abundances == False:
         output.writelines("readlinedat='linelist.dat'\n")
-        output.writelines("fileout='../%s%s.ares'\n" % (path_ares, starname))
+        output.writelines("fileout='%s'\n" % (os.path.join(PATH_EW, starname + '.ares')))
     else:
         output.writelines("readlinedat='lines_ab.dat'\n")
-        output.writelines("fileout='../%s%s_ab.ares'\n" % (path_ares, starname))
+        output.writelines("fileout='%s'\n" % (os.path.join(PATH_EW, starname + '_ab.ares')))
     output.writelines("lambdai=3600.\n")
     output.writelines("lambdaf=9000.\n")
     output.writelines("smoothder=4\n")
@@ -83,13 +83,13 @@ def modify_file(starname, instrument, snr, abundances = False):
 #######################################################################
 #######################################################################
 
-def modify_file_vsini(starname, instrument, snr):
-    path_ares = './EW/'
+def modify_file_vsini(starname, instrument, snr, PATH_SPECTRA = './Spectra'):
+    PATH_EW = '../EW/'
     output = open('./Spectra/mine2.opt', 'w')
 
-    output.writelines("specfits='%s_res.fits'\n" % starname)
+    output.writelines("specfits='%s_res.fits'\n" % (os.path.join(os.path.relpath(PATH_SPECTRA, './Spectra'), starname)))
     output.writelines("readlinedat='linelist_vsini.dat'\n")
-    output.writelines("fileout='../%s%s_vsini.ares'\n" % (path_ares, starname))
+    output.writelines("fileout='%s'\n" % (os.path.join(PATH_EW, starname + '_vsini.ares')))
     output.writelines("lambdai=3600.\n")
     output.writelines("lambdaf=9000.\n")
     output.writelines("smoothder=4\n")
@@ -120,7 +120,7 @@ def modify_file_vsini(starname, instrument, snr):
 def compute_ew(starname, skip = True, abundances = False, \
                 use_HARPS = True, use_FEROS = True, use_UVES = True, use_HIRES = True, \
                 use_CORALIE = True, use_AAT = True, use_PFS = True,\
-                vsini = False):
+                vsini = False, PATH_SPECTRA = './Spectra'):
 
     print '\n\t' + starname
 
@@ -132,20 +132,21 @@ def compute_ew(starname, skip = True, abundances = False, \
     # Checks for spectra for the star
     #############################################
 
-    path_spectra = './Spectra/'
-    path_ares = './EW/'
+    #PATH_SPECTRA = './Spectra/'
+    PATH_EW = './EW/'
 
-    spectra_feros = path_spectra + starname + '_feros.fits'
-    spectra_feros_raw = path_spectra + starname + '_feros_o.fits'
-    spectra_harps = path_spectra + starname + '_harps.fits'
-    spectra_uves_red = path_spectra + starname + '_uves_red.fits'
-    spectra_uves_blue = path_spectra + starname + '_uves_blue.fits'
-    spectra_hires = path_spectra + starname + '_hires/'
-    spectra_HIRES = path_spectra + starname + '_HIRES.sav'
-    spectra_coralie = path_spectra + starname + '_coralie.fits'
-    spectra_aat = path_spectra + starname + '_aat.fits'
-    spectra_pfs = path_spectra + starname + '_pfs.fits'
-    spectra_pfs_sav = path_spectra + starname + '_pfs.sav'
+    spectra_feros = os.path.join(PATH_SPECTRA, starname + '_feros.fits')
+    spectra_feros_raw = os.path.join(PATH_SPECTRA, starname + '_feros_o.fits')
+    spectra_harps = os.path.join(PATH_SPECTRA, starname + '_harps.fits')
+    spectra_harps_dat = os.path.join(PATH_SPECTRA, starname + '_harps.dat')
+    spectra_uves_red = os.path.join(PATH_SPECTRA, starname + '_uves_red.fits')
+    spectra_uves_blue = os.path.join(PATH_SPECTRA, starname + '_uves_blue.fits')
+    spectra_hires = os.path.join(PATH_SPECTRA, starname + '_hires/')
+    spectra_HIRES = os.path.join(PATH_SPECTRA, starname + '_HIRES.sav')
+    spectra_coralie = os.path.join(PATH_SPECTRA, starname + '_coralie.fits')
+    spectra_aat = os.path.join(PATH_SPECTRA, starname + '_aat.fits')
+    spectra_pfs = os.path.join(PATH_SPECTRA, starname + '_pfs.fits')
+    spectra_pfs_sav = os.path.join(PATH_SPECTRA, starname + '_pfs.sav')
 
     #print spectra_harps
 
@@ -165,9 +166,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_feros + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_feros + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -175,11 +176,11 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_feros = feros(path_spectra + starname_feros, abundances = abundances)
+                snr_feros = feros(os.path.join(PATH_SPECTRA, starname_feros), abundances = abundances)
 
                 if snr_feros != 0.:
 
-                    modify_file(starname_feros, 'feros', snr_feros, abundances = abundances)
+                    modify_file(starname_feros, 'feros', snr_feros, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -190,12 +191,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_feros + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_feros + '_vsini.ares'
                 else:
                     if snr_feros != 0.:
-                        modify_file_vsini(starname_feros, 'feros', snr_feros)
+                        modify_file_vsini(starname_feros, 'feros', snr_feros, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -213,9 +214,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_feros_o + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros_o + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_feros_o + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros_o + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -223,11 +224,11 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_feros_orders = feros_orders(path_spectra + starname_feros_o, abundances = abundances)
+                snr_feros_orders = feros_orders(os.path.join(PATH_SPECTRA, starname_feros_o), abundances = abundances)
 
                 if snr_feros_orders != 0.:
 
-                    modify_file(starname_feros_o, 'feros_o', snr_feros_orders, abundances = abundances)
+                    modify_file(starname_feros_o, 'feros_o', snr_feros_orders, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -237,12 +238,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_feros_o + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_feros_o + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_feros_o + '_vsini.ares'
                 else:
                     if snr_feros_orders != 0.:
-                        modify_file_vsini(starname_feros_o, 'feros_o', snr_feros_orders)
+                        modify_file_vsini(starname_feros_o, 'feros_o', snr_feros_orders, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
     #############################################
@@ -251,7 +252,7 @@ def compute_ew(starname, skip = True, abundances = False, \
 
     if use_HARPS == True:
 
-        if os.path.isfile(spectra_harps):
+        if os.path.isfile(spectra_harps) or os.path.isfile(spectra_harps_dat):
             snr_harps = 0.0
             nfiles += 1
             print '\t\tFound HARPS spectra'
@@ -260,9 +261,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_harps + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_harps + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_harps + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_harps + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -270,11 +271,11 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_harps = harps(path_spectra + starname_harps, abundances = abundances)
+                snr_harps = harps(os.path.join(PATH_SPECTRA, starname_harps), abundances = abundances)
 
                 if snr_harps != 0.:
 
-                    modify_file(starname_harps, 'harps', snr_harps, abundances = abundances)
+                    modify_file(starname_harps, 'harps', snr_harps, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
 
@@ -285,15 +286,15 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_harps + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_harps + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_harps + '_vsini.ares'
                 else:
                     if snr_harps != 0.:
-                        modify_file_vsini(starname_harps, 'harps', snr_harps)
+                        modify_file_vsini(starname_harps, 'harps', snr_harps, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
-                    if os.path.isfile(path_ares + starname_harps + '_vsini.ares') == False:
+                    if os.path.isfile(os.path.join(PATH_EW, starname_harps + '_vsini.ares')) == False:
                         print '\t\tCould not create file ' + starname_harps + '_vsini.ares'
 
 
@@ -311,9 +312,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_uves + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_uves + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_uves + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_uves + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -321,10 +322,10 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_uves = uves(path_spectra + starname_uves, abundances = abundances)
+                snr_uves = uves(os.path.join(PATH_SPECTRA, starname_uves), abundances = abundances)
 
                 if (snr_uves[0][2] != 0.0) and (snr_uves[1][2] != 0.0):
-                    modify_file(starname_uves, 'uves', snr_uves, abundances = abundances)
+                    modify_file(starname_uves, 'uves', snr_uves, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -334,12 +335,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_uves + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW + starname_uves + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_uves + '_vsini.ares'
                 else:
                     if (snr_uves[0][2] != 0.) and (snr_uves[1][2] != 0.0):
-                        modify_file_vsini(starname_uves, 'uves', snr_uves)
+                        modify_file_vsini(starname_uves, 'uves', snr_uves, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -357,9 +358,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_hires + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_hires + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_hires + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_hires + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -367,11 +368,11 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_hires = hires(path_spectra + starname_hires, abundances = abundances)
+                snr_hires = hires(os.path.join(PATH_SPECTRA, starname_hires), abundances = abundances)
                 if snr_hires == 0.:
                     nfiles = nfiles - 1
                 else:
-                    modify_file(starname_hires, 'hires', snr_hires, abundances = abundances)
+                    modify_file(starname_hires, 'hires', snr_hires, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -381,12 +382,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_hires + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_hires + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_hires + '_vsini.ares'
                 else:
                     if snr_hires != 0.:
-                        modify_file_vsini(starname_hires, 'hires', snr_hires)
+                        modify_file_vsini(starname_hires, 'hires', snr_hires, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
         #############################################
@@ -402,9 +403,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_HIRES + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_HIRES + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_HIRES + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_HIRES + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -412,10 +413,10 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_HIRES = spectra_sav(path_spectra + starname_HIRES, abundances = abundances)
+                snr_HIRES = spectra_sav(os.path.join(PATH_SPECTRA, starname_HIRES), abundances = abundances)
 
                 if snr_HIRES != 0.:
-                    modify_file(starname_HIRES, 'sav', snr_HIRES, abundances = abundances)
+                    modify_file(starname_HIRES, 'sav', snr_HIRES, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -425,12 +426,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_HIRES + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_HIRES + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_HIRES + '_vsini.ares'
                 else:
                     if snr_HIRES != 0.:
-                        modify_file_vsini(starname_HIRES, 'sav', snr_HIRES)
+                        modify_file_vsini(starname_HIRES, 'sav', snr_HIRES, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -448,9 +449,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_pfs + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_pfs + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_pfs + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_pfs + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -458,11 +459,11 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_pfs = pfs(path_spectra + starname_pfs, abundances = abundances)
+                snr_pfs = pfs(os.path.join(PATH_SPECTRA, starname_pfs), abundances = abundances)
                 if snr_pfs == 0.:
                     nfiles = nfiles - 1
                 else:
-                    modify_file(starname_pfs, 'pfs', snr_pfs, abundances = abundances)
+                    modify_file(starname_pfs, 'pfs', snr_pfs, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -472,12 +473,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_pfs + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_pfs + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_pfs + '_vsini.ares'
                 else:
                     if snr_pfs != 0.:
-                        modify_file_vsini(starname_pfs, 'pfs', snr_pfs)
+                        modify_file_vsini(starname_pfs, 'pfs', snr_pfs, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -496,9 +497,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_coralie + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_coralie + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_coralie + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_coralie + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -506,10 +507,10 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_coralie = coralie(path_spectra + starname_coralie, abundances = abundances)
+                snr_coralie = coralie(os.path.join(PATH_SPECTRA, starname_coralie), abundances = abundances)
 
                 if snr_coralie != 0.:
-                    modify_file(starname_coralie, 'coralie', snr_coralie, abundances = abundances)
+                    modify_file(starname_coralie, 'coralie', snr_coralie, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -519,12 +520,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_coralie + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_coralie + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_coralie + '_vsini.ares'
                 else:
                     if snr_coralie != 0.:
-                        modify_file_vsini(starname_coralie, 'coralie', snr_coralie)
+                        modify_file_vsini(starname_coralie, 'coralie', snr_coralie, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -543,9 +544,9 @@ def compute_ew(starname, skip = True, abundances = False, \
             append_inst = 0
 
             if abundances == False:
-                file_skip = os.path.isfile(path_ares + starname_aat + '.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_aat + '.ares'))
             else:
-                file_skip = os.path.isfile(path_ares + starname_aat + '_ab.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_aat + '_ab.ares'))
                 print '\t\tComputing with abundances = True'
 
             if file_skip and skip:
@@ -553,10 +554,10 @@ def compute_ew(starname, skip = True, abundances = False, \
                 append_inst += 1
 
             if (file_skip == False) or (skip == False):
-                snr_aat = aat(path_spectra + starname_aat, abundances = abundances)
+                snr_aat = aat(os.path.join(PATH_SPECTRA, starname_aat), abundances = abundances)
 
                 if snr_aat != 0.:
-                    modify_file(starname_aat, 'aat', snr_aat, abundances = abundances)
+                    modify_file(starname_aat, 'aat', snr_aat, abundances = abundances, PATH_SPECTRA = PATH_SPECTRA)
 
                     os.system('bash run_ARES.bash')
                     append_inst += 1
@@ -566,12 +567,12 @@ def compute_ew(starname, skip = True, abundances = False, \
 
             if vsini:
                 print '\t\tComputing for vsini lines'
-                file_skip = os.path.isfile(path_ares + starname_aat + '_vsini.ares')
+                file_skip = os.path.isfile(os.path.join(PATH_EW, starname_aat + '_vsini.ares'))
                 if file_skip and skip:
                     print '\t\tThere is already a file called ' + starname_aat + '_vsini.ares'
                 else:
                     if snr_aat != 0.:
-                        modify_file_vsini(starname_aat, 'aat', snr_aat)
+                        modify_file_vsini(starname_aat, 'aat', snr_aat, PATH_SPECTRA = PATH_SPECTRA)
                         os.system('bash run_ARES.bash')
 
 
@@ -589,11 +590,13 @@ def compute_ew(starname, skip = True, abundances = False, \
 
 def spectra(lista_estrellas, skip = True,\
             HARPS = True, FEROS = True, UVES = True, HIRES = True, \
-            CORALIE = True, AAT = True, PFS = True, abundance = True):
+            CORALIE = True, AAT = True, PFS = True, abundance = True, \
+            s_path = './Spectra'):
 
     skip = True
     total_spectra = []
     calc_abundance = []
+    PATH_EW = './EW'
 
     for starname in lista_estrellas:
         name_instrument = compute_ew(starname, skip = skip, \
@@ -605,7 +608,8 @@ def spectra(lista_estrellas, skip = True,\
                                      use_CORALIE = CORALIE, \
                                      use_AAT = AAT, \
                                      use_PFS = PFS, \
-                                     vsini = True)
+                                     vsini = True, \
+                                     PATH_SPECTRA = s_path)
         if abundance:
             n = compute_ew(starname, skip = skip, abundances = True, \
                            use_HARPS = HARPS, \
@@ -614,7 +618,8 @@ def spectra(lista_estrellas, skip = True,\
                            use_HIRES = HIRES, \
                            use_CORALIE = CORALIE, \
                            use_AAT = AAT, \
-                           use_PFS = PFS)
+                           use_PFS = PFS, \
+                           PATH_SPECTRA = s_path)
 
 
         name_instrument_final = []
@@ -622,13 +627,13 @@ def spectra(lista_estrellas, skip = True,\
 
         for inst in name_instrument:
             use_ab = False
-            if os.path.isfile('./EW/' + inst + '.ares'):
-                if (os.stat('./EW/' + inst + '.ares').st_size != 0):
+            if os.path.isfile(os.path.join(PATH_EW, inst + '.ares')):
+                if (os.stat(os.path.join(PATH_EW, inst + '.ares')).st_size != 0):
 
                     name_instrument_final.append(inst)
 
-                    if os.path.isfile('./EW/' + inst + '_ab.ares'):
-                        if (os.stat('./EW/' + inst + '_ab.ares').st_size != 0):
+                    if os.path.isfile(os.path.join(PATH_EW, inst + '_ab.ares')):
+                        if (os.stat(os.path.join(PATH_EW, inst + '_ab.ares')).st_size != 0):
                             use_ab = True
 
                     inst_abundance.append(use_ab)

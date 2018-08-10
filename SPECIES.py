@@ -47,11 +47,13 @@ parser.add_argument('-file_params', default = 'any_file.txt',\
                            'Will be used only if hold_params == True.')
 parser.add_argument('-hold_mass', action = 'store_true', default = False,\
                     help = 'Option to set the mass, age, and photometric logg '\
-                           'to a certain value.')
+                           'to a certain value. \
+                           DEPRECATED.')
 parser.add_argument('-file_mass', default = 'any_file.txt',\
                     help = 'Name of the file with the hold values for the mass, '\
                            'age and photometric logg. '\
-                           'Will only be used if hold_mass == True.')
+                           'Will only be used if hold_mass == True. \
+                           DEPRECATED.')
 parser.add_argument('-set_boundaries', action = 'store_true', default = False,\
                     help = 'Option to change the boundaries of the '\
                            'of the atmospheric parameters.')
@@ -95,6 +97,21 @@ parser.add_argument('-no_r_iso_logg', action = 'store_true', default = False,\
                     help = 'Do not use the logg from isochrones interpolation \
                             to recompute the atmospheric parameters when there is \
                             disagreement with the spectroscopic one.')
+parser.add_argument('-age_limits',\
+                    help = 'Set limits to the parameters space for the stellar age. \
+                            It has to be in the format log(age), with age in years \
+                            (not Gyr). Default is None.')
+parser.add_argument('-path_spectra', default = './Spectra',\
+                    help = 'Path to the directory containing the spectra. It has \
+                            to be relative to the path of SPECIES, or the \
+                            absolute path.')
+
+parser.add_argument('-columns', default = 'All',\
+                    help = 'Columns to include in the output. The name of the star, \
+                            instrument and exception will always be included.')
+
+parser.add_argument('-giant', default = 'False', action = 'store_true',\
+                    help = 'If the star, or list of stars, are considered to be giants.')
 
 
 args = parser.parse_args()
@@ -116,7 +133,7 @@ if 'any_star' in starlist:
           'Reading from inside SPECIES.py\n'
 
 
-    starlist = ['sun01']
+    #starlist = ['ceres01','ceres02','ceres03','moon01','ganymede01','sun01','sun02','sun03','sun04','sun05']
 
 
 #########################################################################
@@ -219,6 +236,33 @@ recompute_with_logg_p = not args.no_r_iso_logg
 
 
 #########################################################################
+# Age limits
+#########################################################################
+
+age_limits = args.age_limits
+if age_limits != None:
+    a = age_limits.split(',')
+    age_limits = (float(a[0]), float(a[1]))
+
+#########################################################################
+# Path to spectra
+#########################################################################
+
+PATH_SPECTRA = args.path_spectra
+
+#########################################################################
+# Columns to use in the output
+#########################################################################
+
+out_columns = args.columns
+
+#########################################################################
+# If the star is giant
+#########################################################################
+
+is_giant = args.giant
+
+#########################################################################
 # Imports the python packages needed
 # Make sure you've got all of them
 #########################################################################
@@ -226,6 +270,9 @@ recompute_with_logg_p = not args.no_r_iso_logg
 print '\t Loading the necessary packages...'
 
 import os, time, warnings, logging
+
+warnings.simplefilter("ignore")
+
 import calc_params as cp
 import multiprocessing as mp
 from spectra import spectra
@@ -240,12 +287,6 @@ from astropy.table import Table, Column
 start = time.time()
 
 #########################################################################
-# Ignore warnings
-#########################################################################
-
-warnings.simplefilter("ignore")
-
-#########################################################################
 # Corrects the spectra to restframe and computes the EW
 #########################################################################
 
@@ -254,11 +295,11 @@ print '\t Creating the equivalent width files...'
 if all_inst == True:
     starname, abundance_p = spectra(starlist, HARPS = True, FEROS = True, UVES = True, \
                        HIRES = True, CORALIE = True, AAT = True, PFS = True, \
-                       abundance = abundance)
+                       abundance = abundance, s_path = PATH_SPECTRA)
 else:
     starname, abundance_p = spectra(starlist, HARPS = harps, FEROS = feros, UVES = uves, \
                        HIRES = hires, CORALIE = coralie, AAT = aat, PFS = pfs, \
-                       abundance = abundance)
+                       abundance = abundance, s_path = PATH_SPECTRA)
 
 if len(starname) == 0:
     print '\t No star with valid .ares files was found. Stopping the computation.'
@@ -293,7 +334,8 @@ else:
                         hold_mass, file_hold_mass,\
                         use_coords, file_with_coords,\
                         set_boundaries, file_with_boundaries, mass_from_file,\
-                        try_with_vt_hold, recompute_with_logg_p))
+                        try_with_vt_hold, recompute_with_logg_p, age_limits,\
+                        PATH_SPECTRA, is_giant))
 
 
     ############################################################################
@@ -331,7 +373,7 @@ else:
         exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt,\
         err_vt2, vs, err_vs, vm, err_vm, mass, err_mass1, err_mass2, age,\
         err_age1, err_age2, logg_iso, err_logg_iso1, err_logg_iso2, radius,\
-        err_radius1, err_radius2, use_Tc, use_vt, use_logg_p,\
+        err_radius1, err_radius2, logL, err_logL1, err_logL2, use_Tc, use_vt, use_logg_p,\
         T_c, err_T_c, relation_temp = results.transpose()
 
 
@@ -392,10 +434,27 @@ else:
             pass
         del h
 
+        if os.path.samefile(PATH_SPECTRA, './Spectra') == False:
+            if os.path.isfile(os.path.join('./Spectra', name_star[i] + '_' + name_inst + '_res.fits')):
+                os.unlink(os.path.join('./Spectra', name_star[i] + '_' + name_inst + '_res.fits'))
+
 
     ############################################################################
     # Writes the results in the output files
     ############################################################################
+
+    original_columns = np.array(['Starname', 'Instrument', 'RV', '[Fe/H]', 'err_[Fe/H]', \
+    'Temperature', 'err_T', 'logg', 'err_logg', 'vt', 'err_vt', 'nFeI', 'nFeII',\
+    'exception', 'vsini', 'err_vsini', 'vmac', 'err_vmac', '[Na/H]', 'e_[Na/H]',\
+    'nNaI', '[Mg/H]', 'e_[Mg/H]', 'nMgI', '[Al/H]', 'e_[Al/H]', 'nAlI', '[Si/H]',\
+    'e_[Si/H]', 'nSiI', '[Ca/H]', 'e_[Ca/H]', 'nCaI', '[TiI/H]', 'e_[TiI/H]', 'nTiI',\
+    '[TiII/H]', 'e_[TiII/H]', 'nTiII', '[Cr/H]', 'e_[Cr/H]', 'nCrI', '[Mn/H]', \
+    'e_[Mn/H]', 'nMnI','[Ni/H]', 'e_[Ni/H]', 'nNiI', '[Cu/H]', 'e_[Cu/H]', 'nCuI', \
+    '[Zn/H]', 'e_[Zn/H]', 'nZnI', 'exception_Fe', 'exception_Ti', '[FeI/H]', '[FeII/H]',\
+    'Mass', 'err_mass1', 'err_mass2', 'Age', 'err_age1', 'err_age2', 'iso_logg', \
+    'err_iso_logg1', 'err_iso_logg2', 'Radius', 'err_radius1', 'err_radius2', \
+    'logL', 'err_logL1', 'err_logL2', 'use_Tc', 'use_vt', 'use_iso_logg', 'err_vt2', 'err_T2',\
+    'T_photo', 'err_T_photo', 'T_photo_relation'])
 
     data = Table([name_star, instrument, rv, xmetal, err_met, T, err_T,\
             logg, err_logg, micro, err_vt, nFeI, nFeII, exception, vs, err_vs,\
@@ -405,8 +464,8 @@ else:
             ab_MnI, dev_MnI, nMnI, ab_NiI, dev_NiI, nNiI, ab_CuI, dev_CuI, nCuI, \
             ab_ZnI, dev_ZnI, nZnI, exception_Fe, exception_Ti, ab_FeI, ab_FeII, \
             mass, err_mass1, err_mass2, age, err_age1, err_age2, logg_iso, err_logg_iso1,\
-            err_logg_iso2, radius, err_radius1, err_radius2, use_Tc, use_vt, use_logg_p,\
-            err_vt2, err_T2, T_c, err_T_c, relation_temp],\
+            err_logg_iso2, radius, err_radius1, err_radius2, logL, err_logL1, err_logL2,\
+            use_Tc, use_vt, use_logg_p, err_vt2, err_T2, T_c, err_T_c, relation_temp],\
             names = ['Starname', 'Instrument', 'RV', '[Fe/H]', 'err_[Fe/H]', \
             'Temperature', 'err_T', 'logg', 'err_logg', 'vt', 'err_vt', 'nFeI', 'nFeII',\
             'exception', 'vsini', 'err_vsini', 'vmac', 'err_vmac', '[Na/H]', 'e_[Na/H]',\
@@ -417,7 +476,7 @@ else:
             '[Zn/H]', 'e_[Zn/H]', 'nZnI', 'exception_Fe', 'exception_Ti', '[FeI/H]', '[FeII/H]',\
             'Mass', 'err_mass1', 'err_mass2', 'Age', 'err_age1', 'err_age2', 'iso_logg', \
             'err_iso_logg1', 'err_iso_logg2', 'Radius', 'err_radius1', 'err_radius2', \
-            'use_Tc', 'use_vt', 'use_iso_logg', 'err_vt2', 'err_T2',\
+            'logL', 'err_logL1', 'err_logL2', 'use_Tc', 'use_vt', 'use_iso_logg', 'err_vt2', 'err_T2',\
             'T_photo', 'err_T_photo', 'T_photo_relation'],\
             dtype = ['str', 'str', 'float', 'float', 'float', 'float', 'float', \
             'float', 'float', 'float', 'float', 'int', \
@@ -427,7 +486,8 @@ else:
             'float', 'int', 'float', 'float', 'int', 'float', 'float', 'int', 'float', 'float', \
             'int', 'float', 'float', 'int', 'float', 'float', 'int', 'float', \
             'float', 'int', 'int', 'int', 'float', 'float', 'float', 'float', 'float', \
-            'float', 'float', 'float', 'float', 'float', 'float', 'float', 'float', 'float', 'str', 'str',\
+            'float', 'float', 'float', 'float', 'float', 'float', 'float', 'float', 'float',\
+            'float', 'float', 'float', 'str', 'str',\
             'str', 'float', 'float','float', 'float', 'str'])
 
     data['[Fe/H]'].format = data['[Na/H]'].format = data['[Mg/H]'].format = \
@@ -436,7 +496,7 @@ else:
     data['[Cr/H]'].format = data['[Mn/H]'].format = data['[Ni/H]'].format = \
                 data['[Cu/H]'].format = data['[Zn/H]'].format = data['[TiII/H]'].format = '%8.2f'
     data['Temperature'].format = '.1f'
-    data['Mass'].format = data['Age'].format = data['Radius'].format = '%8.2f'
+    data['Mass'].format = data['Age'].format = data['Radius'].format = data['logL'].format = '%8.2f'
     data['logg'].format = data['vt'].format = \
                 data['vsini'].format = data['err_vsini'].format = \
                 data['vmac'].format = data['err_vmac'].format = \
@@ -453,10 +513,17 @@ else:
     data['err_mass1'].format = data['err_mass2'].format = \
                 data['err_age1'].format = data['err_age2'].format = data['iso_logg'].format = \
                 data['err_iso_logg1'].format = data['err_iso_logg2'].format = \
-                data['err_radius1'].format = data['err_radius2'].format = '%.3f'
+                data['err_radius1'].format = data['err_radius2'].format = \
+                data['err_logL1'].format = data['err_logL2'].format = '%.3f'
     data['RV'].format = '%.3f'
     data['T_photo'].format = '%.1f'
     data['err_T_photo'].format = '%.3f'
+
+    if out_columns != 'All':
+        columns = np.array(['Starname', 'Instrument', 'exception'] + out_columns.split(','))
+        not_included = original_columns[np.isin(original_columns, columns, invert = True)]
+        data.remove_columns(not_included)
+
 
     if save_as_ascii == True:
 

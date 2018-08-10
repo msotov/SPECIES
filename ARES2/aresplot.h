@@ -1,4 +1,4 @@
-/* 
+/*
  * File:   areslib.h
  * Author: sousasag
  *
@@ -10,20 +10,39 @@
 
 // 1- for plot_utils
 // 2- for gnuplot
+// 3- for gnuplot saving png plots in plotdir
 #define PLOT_TYPE 2
 
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <stdio.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
-    
+
 void plotxy(double *, double *, long, double, double);
 void plotxyover(double *, double *, long, double *, double *, long, double, double);
 void plotxyover2(double *, double *, long, double *, double *, long, double, double);
 void plotxyover3(double *, double *, long, double *, double *, long, double *, double *, long, double, double);
+void create_dir_plot();
 
+
+void create_dir_plot(){
+
+    if (PLOT_TYPE == 3){
+		struct stat st = {0};
+
+		if (stat("plotdir", &st) == -1) {
+    		mkdir("plotdir", 0700);
+		} else{
+        system("rm -rf plotdir");
+        mkdir("plotdir", 0700);
+		}
+    }
+}
 
 void plotxy(double xvec[], double yvec[], long np, double xi, double xf){
     FILE * pFile2;
@@ -42,7 +61,7 @@ void plotxy(double xvec[], double yvec[], long np, double xi, double xf){
     buffer = fcvt (xf, 0, &decimal, &sign);
     strcat (str,buffer);
     strcat (str," < tmp");
-    system(str); 
+    system(str);
 /*
     Py_Initialize();
       PyRun_SimpleString("import pylab");
@@ -51,8 +70,8 @@ void plotxy(double xvec[], double yvec[], long np, double xi, double xf){
       PyRun_SimpleString("pylab.plot(x,y)");
       PyRun_SimpleString("pylab.show()");
     Py_Exit(0);
-*/    
-    printf("%s\n",str);
+*/
+    //printf("%s\n",str);
 //    system("rm tmp");
 }
 
@@ -112,9 +131,22 @@ void plotxyover2(double xvec[], double yvec[],long np, double xvec2[], double yv
     	system(str);
     } else {
 //  GNUPLOT:
-		FILE *pipe = popen("gnuplot -persist","w");
-		fprintf(pipe, "plot 'tmp' with lines, 'tmp2' with lines, 'tmp3' with lines \n");	
-		pclose(pipe);
+		if (PLOT_TYPE == 3) {
+            double line = xi + (xf-xi)/2.;
+			FILE *pipe = popen("gnuplot -persist","w");
+			fprintf(pipe, "set term png \n");
+			fprintf(pipe, "set output \"plotdir/plot_%08.2f.png\" \n", line);
+			fprintf(pipe, "plot 'tmp' with lines, 'tmp2' with lines, 'tmp3' with lines \n");
+			fprintf(pipe, "set term x11 \n");
+			pclose(pipe);
+            char str_norm[300];
+            sprintf(str_norm, "cp tmp plotdir/spec_%08.2f.dat", line);
+            system(str_norm);
+		} else {
+			FILE *pipe = popen("gnuplot -persist","w");
+			fprintf(pipe, "plot 'tmp' with lines, 'tmp2' with lines, 'tmp3' with lines \n");
+			pclose(pipe);
+		}
 	}
 
 //    system("rm tmp tmp2 tmp3");
@@ -157,10 +189,10 @@ void plotxyover3(double xvec[], double yvec[],long np, double xvec2[], double yv
 	} else {
 	//  GNUPLOT:
 		FILE *pipe = popen("gnuplot -persist","w");
-		fprintf(pipe, "plot 'tmp20' with lines, 'tmp22' with lines, 'tmp23' with points\n");	
-		pclose(pipe);  
+		fprintf(pipe, "plot 'tmp20' with lines, 'tmp22' with lines, 'tmp23' with points\n");
+		pclose(pipe);
 	//    system("rm tmp20 tmp22 tmp23");
-		
+
 	}
 
 }
@@ -173,4 +205,3 @@ void plotxyover3(double xvec[], double yvec[],long np, double xvec2[], double yv
 #endif
 
 #endif	/* _ARESPLOT_H */
-

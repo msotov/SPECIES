@@ -3,6 +3,12 @@ import re, math, os
 from scipy.interpolate import splev, splrep
 from scipy.optimize import curve_fit
 from astropy.io import ascii
+from scipy.optimize import curve_fit
+import matplotlib.pyplot as plt
+from astropy.stats import sigma_clip
+
+def func_gauss(x, a, mu, sigma):
+    return a*np.exp(-(x-mu)**2./(2*sigma**2.))
 
 
 def compute_average_abundance_error(starname, w = False):
@@ -91,7 +97,6 @@ def compute_average_abundance_error(starname, w = False):
             index = int(np.where(file_wave == wave_feI[i])[0])
             e_w_feI[i] = file_e_ew[index]
             w_feI[i] = file_ew[index]
-
         for i in range(len(wave_feII)):
             index = int(np.where(file_wave == wave_feII[i])[0])
             e_w_feII[i] = file_e_ew[index]
@@ -100,7 +105,6 @@ def compute_average_abundance_error(starname, w = False):
         del wave_feII, e_abund_feII, filename, filelines, file_wave, file_ew,\
             file_e_ew, w_feII, e_w_feII, index, flagfe, ab_FeI, \
             linesfe1, linesfe2, ab, ab2
-
 
         return np.array(wave_feI), np.array(abund_feI), np.array(e_abund_feI),\
                np.array(w_feI), np.array(e_w_feI), np.array(ep_feI),\
@@ -434,7 +438,30 @@ def error_for_met(starname, t_moog, xmet_moog, logg_moog, vt_moog, \
         return 0.2
 
     else:
-        sigma_xmet2 = np.var(abund_feI)
+        #sigma_xmet2 = np.var(abund_feI)
+        #print e_abund_feI
+        #weights_ab = 1./(e_abund_feI**2.)
+        #print weights_ab
+        #inan = np.where((np.isnan(weights_ab) == False) & (np.isinf(weights_ab) == False))[0]
+        #print np.sum(weights_ab[inan])
+        #sigma_xmet2 = (np.sum(weights_ab[inan]*abund_feI[inan]**2.)/np.sum(weights_ab[inan]) - np.average(abund_feI[inan], weights = weights_ab[inan])**2.)*len(abund_feI[inan])/(len(abund_feI[inan])-1)
+
+        #nh, binsh = np.histogram(abund_feI[inan], bins=20, weights = weights_ab[inan])
+        #bins2 = np.array([binsh[i] + (binsh[i+1] - binsh[i])/2. for i in range(len(binsh)-1)])
+        #popt, pcov = curve_fit(func_gauss, bins2, nh, p0 = [max(nh), np.nanmean(abund_feI[inan]), np.std(abund_feI[inan])])
+        #print popt
+        #sigma_xmet2 = popt[2]**2.
+        #print nh
+
+        #fig_h, ax_h = plt.subplots()
+        #ax_h.hist(abund_feI[inan], bins=20, alpha=0.5)
+        #ax_h.plot(bins2, nh, marker = 'o', ls = 'None')
+        #ax_h.plot(bins2, func_gauss(bins2, *popt))
+        #fig_h.savefig('./output/coeffs_error_files/' + starname + '_scatter_feI.pdf')
+        #plt.close(fig_h)
+
+        imask = sigma_clip(abund_feI)
+        sigma_xmet2 = np.var(abund_feI[~imask.mask])
 
         if debug == True:
             file_debug.debug('Error in metallicity because of the '\

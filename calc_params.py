@@ -15,6 +15,8 @@ from interpol_function import interpol
 from scipy.stats import sigmaclip
 from atmos import atmos
 import calc_broadening as cb
+from astropy.stats import sigma_clip
+from scipy import stats
 
 
 #******************************************************************************
@@ -38,7 +40,7 @@ def multi_run_wrapper(args):
                 2, 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,\
-                'no', 'no', 'no', 0.0, 0.0, 'None')
+                0.0, 0.0, 0.0, 'no', 'no', 'no', 0.0, 0.0, 'None')
 
 #******************************************************************************
 #******************************************************************************
@@ -222,6 +224,13 @@ def create_linelist(file_star, ab = False):
     ew_b = file_ew['ew']
     ew_err_b = file_ew['ew_err']
 
+    #if ab==False:
+    #    file_ew = np.genfromtxt('./EW/new_ew_file.dat', dtype = None,\
+    #                            names = ('line', 'ew', 'ew_err'))
+    #    line_ew_b = file_ew['line']
+    #    ew_b = file_ew['ew']
+    #    ew_err_b = file_ew['ew_err']
+
     #Take only the lines that 10. <= EW <=150 and the error in the EW is lower than the EW
     ilines = np.where((ew_b >= 10.) & (ew_b <= 150.) & (ew_err_b/ew_b <= 2.0))[0]
     line_ew = line_ew_b[ilines]
@@ -383,7 +392,7 @@ def Temperature(atmos, i):
             bound_max = atmos.atmos_params['temperature']['boundaries'][1]
             if T > bound_max or T < bound_min:
                 atmos.write_debug_message('Not possible to compute parameters '\
-                                          'for T > %d or T < %d. '\
+                                          'for T < %d or T > %d. '\
                                           'Check the boundaries of your parameter.' % \
                                           (int(bound_min), int(bound_max)))
                 atmos.new_change()
@@ -887,7 +896,10 @@ def run_iteration(starlist,\
                   file_with_boundaries = None,
                   mass_from_file = False,
                   try_with_vt_hold = False,
-                  recompute_with_logg_p = True):
+                  recompute_with_logg_p = True,
+                  age_limits = None,
+                  PATH_SPECTRA = './Spectra',
+                  is_giant = False):
     """
     Compute all the parameters for one star.
 
@@ -965,9 +977,19 @@ def run_iteration(starlist,\
         else:
             star_name = star[:indices[-1]]
 
+    #########################################################################
+    # Create a symbolic copy of the restframe spectra into the default spectra
+    # directory if they're not the same
+    #########################################################################
+
+    if os.path.samefile(PATH_SPECTRA, './Spectra') == False:
+        if os.path.isfile(os.path.join('./Spectra', star + '_res.fits')) == False:
+                os.symlink(os.path.join(PATH_SPECTRA, star + '_res.fits'), \
+                           os.path.join('./Spectra', star + '_res.fits'))
+
 
     #########################################################################
-    # Creates the debug file, only if debug = True
+    # Creates the debug file, only if debug == True
     #########################################################################
 
     if debug:
@@ -1071,22 +1093,47 @@ def run_iteration(starlist,\
                                             names = True)
 
             color_names = vals_magnitudes['Starname']
+            do_extinction = vals_magnitudes['Extinction']
+
             if star_name in color_names:
                 in_file = True
                 imag = int(np.where(color_names == star_name)[0])
+                filter_names = ['CTIO B', 'CTIO V', 'CTIO R', 'CTIO I', '2MASS J', '2MASS H',\
+                                '2MASS Ks', 'HIPPARCOS BT', 'HIPPARCOS VT', 'Stromgren b', 'Stromgren y']
 
-                for mag in ['B', 'V', 'R', 'I', 'J', 'H', 'K', 'Bt', 'Vt', 'b', 'y']:
+                for index_mag,mag in enumerate(['B', 'V', 'R', 'I', 'J', 'H', 'K', 'Bt', 'Vt', 'b', 'y']):
                     try:
                         value_mag = vals_magnitudes[mag][imag]
                     except IndexError:
                         value_mag = vals_magnitudes[mag]
                     if value_mag != 'no':
-                        photometry[mag] = [float(value_mag), 0.01, 'Given by user', 5500, 0.0]
+                        photometry[mag] = [float(value_mag), 0.01, 'Given by user', filter_names[index_mag], 0.0]
+
+                try:
+                    if do_extinction[imag] == 'yes':
+                        if 'RA' and 'DEC' in vals_magnitudes.keys():
+                            photometry['RA'] = [float(vals_magnitudes['RA'][imag]), 'Given by user']
+                            photometry['DEC'] = [float(vals_magnitudes['DEC'][imag]), 'Given by user']
+                            if 'Parallax' in vals_magnitudes.keys():
+                                if vals_magnitudes['Parallax'][imag] != 'no':
+                                    photometry['parallax'] = [float(vals_magnitudes['Parallax'][imag]), 'Given by user']
+
+                            photometry = pr.correct_extinction(photometry)
+                except IndexError:
+                    if do_extinction == 'yes':
+                        if 'RA' and 'DEC' in vals_magnitudes.keys():
+                            photometry['RA'] = [float(vals_magnitudes['RA']), 'Given by user']
+                            photometry['DEC'] = [float(vals_magnitudes['DEC']), 'Given by user']
+                            if 'Parallax' in vals_magnitudes.keys():
+                                if vals_magnitudes['Parallax'] != 'no':
+                                    photometry['parallax'] = [float(vals_magnitudes['Parallax']), 'Given by user']
+
+                            photometry = pr.correct_extinction(photometry)
 
                 if debug:
                     log_f.debug('Obtaining colors from file.')
 
-            del vals_magnitudes, color_names
+            del vals_magnitudes, color_names, do_extinction, filter_names
 
     else:
         if debug:
@@ -1177,7 +1224,7 @@ def run_iteration(starlist,\
         file_params = file_parameters
         try:
             arch_params = ascii.read(file_params)
-            stars_params = arch_params['Starname']
+            stars_params = np.array(arch_params['Starname']).astype('str')
             hold_par = np.array(arch_params['hold'])
             T_params = np.array(arch_params['T'])
             logg_params = np.array(arch_params['logg'])
@@ -1186,6 +1233,7 @@ def run_iteration(starlist,\
             vsini_params = arch_params['vsini']
             vmac_params = arch_params['vmac']
             del arch_params
+
 
             if star_name in stars_params:
                 try:
@@ -1245,6 +1293,7 @@ def run_iteration(starlist,\
         hold = []
 
 
+
     #########################################################################
     # Set the boundaries, in case they are given by the user
     #########################################################################
@@ -1266,7 +1315,7 @@ def run_iteration(starlist,\
             else:
                 i = int(np.where(stars_bound == star_name)[0])
                 vals_boundaries = {}
-                if temperature_bound[i] != 'no':
+                if (temperature_bound[i] != 'no'):
                     v = temperature_bound[i].split(',')
                     vals_boundaries['temperature'] = (float(v[0]), float(v[1]))
                 if metallicity_bound[i] != 'no':
@@ -1292,8 +1341,10 @@ def run_iteration(starlist,\
 
     if (set_boundaries == False):
         vals_boundaries = {}
-        if (T_c != 0.0):
+        if (T_c != 0.0) and (check_with_photometry_T == True):
             vals_boundaries['temperature'] = (T_c - 300.0, T_c + 300.0)
+            if is_giant:
+                vals_boundaries['temperature'] = (T_c - 1000.0, T_c + 1000.0)
 
         set_boundaries = True
 
@@ -1306,9 +1357,12 @@ def run_iteration(starlist,\
 
     #########################################################################
     # hold mass part (if hold_mass == True)
+    # THIS OPTION HAS BEEN DEPRECATED.
     #########################################################################
 
     use_hold_mass = 0
+    file_mass = 'random_file.txt'
+    '''
 
     if hold_mass == True:
         file_mass = file_hold_mass
@@ -1344,7 +1398,7 @@ def run_iteration(starlist,\
             pass
     else:
         file_mass = 'random_file.txt'
-
+    '''
 
 
     #########################################################################
@@ -1427,9 +1481,11 @@ def run_iteration(starlist,\
                 mass_from_file = False
 
         mass, err_mass1, err_mass2, age, err_age1, err_age2, logg_iso, err_logg_iso1, err_logg_iso2,\
-                        radius, err_radius1, err_radius2 = find_mass_age(star, T, logg, xmetal,\
+                        radius, err_radius1, err_radius2, \
+                        logL, err_logL1, err_logL2 = find_mass_age(star, T, logg, xmetal,\
                                                     err_T, err_logg, err_met, exception, photometry,\
-                                                    debug, log_f, mass_from_file = mass_from_file)
+                                                    debug, log_f, mass_from_file = mass_from_file,\
+                                                    age_limits = age_limits)
 
         if err_logg_iso1 == 0.0:
             err_logg_iso1 = 0.5
@@ -1471,9 +1527,11 @@ def run_iteration(starlist,\
                     err_logg = 0.5
 
                 mass, err_mass1, err_mass2, age, err_age1, err_age2, logg_iso, err_logg_iso1, err_logg_iso2,\
-                                radius, err_radius1, err_radius2 = find_mass_age(star, T, logg, xmetal,\
+                                radius, err_radius1, err_radius2,\
+                                logL, err_logL1, err_logL2 = find_mass_age(star, T, logg, xmetal,\
                                                             err_T, err_logg, err_met, exception, photometry,\
-                                                            debug, log_f, mass_from_file = mass_from_file)
+                                                            debug, log_f, mass_from_file = mass_from_file,\
+                                                            age_limits = age_limits)
 
 
     #########################################################################
@@ -1623,7 +1681,8 @@ def run_iteration(starlist,\
             exception_Fe, exception_Ti, err_T, err_T2, err_logg, err_met, err_vt, err_vt2,\
             vs, err_vs, vm, err_vm, mass, err_mass1, err_mass2, age, err_age1, err_age2,\
             logg_iso, err_logg_iso1, err_logg_iso2, radius, err_radius1, err_radius2,\
-            use_casagrande, use_vt, use_logg_p, T_c, err_T_c, relation_temp)
+            logL, err_logL1, err_logL2, use_casagrande, use_vt, use_logg_p, \
+            T_c, err_T_c, relation_temp)
 
 
 
