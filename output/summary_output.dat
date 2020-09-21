@@ -1,0 +1,2 @@
+ Starname    [Fe/H]  err_[Fe/H]  Temperature   err_T   logg  err_logg      logL  err_logL1  err_logL2  vsini  err_vsini      Mass  err_mass1  err_mass2  exception  use_Tc  use_vt  use_iso_logg  Instrument 
+    sun01     -0.03       0.046       5766.2  50.000  4.353     0.060      0.06      0.063      0.062  3.729      0.235      0.97      0.027      0.026          1      no      no            no       HARPS 

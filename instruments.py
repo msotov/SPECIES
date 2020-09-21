@@ -1,12 +1,17 @@
-import pyfits, os, glob
+from __future__ import print_function
+from __future__ import division
+from builtins import str
+from builtins import range
+import os
+import glob
+import subprocess
+from past.utils import old_div
+from astropy.io import fits
 import numpy as np
-from ccf import restframe
 from PyAstronomy import pyasl
 from scipy import interpolate
 from scipy.io.idl import readsav
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import collections
+from Ccf import restframe
 
 
 def compute_snr(x, data):
@@ -14,28 +19,34 @@ def compute_snr(x, data):
     Computes the S/N for spectra using a set of ranges where there shouldn't be
     any lines, only continuum.
     """
-    ranges = [[5840.22, 5844.01], [5979.25, 5983.13], [6066.49, 6075.55], \
-              [6195.95, 6198.74], [6386.36, 6392.14], [5257.83, 5258.58], \
+    #ranges = [[5840.22, 5844.01], [5979.25, 5983.13], [6066.49, 6075.55],\
+    #          [6195.95, 6198.74], [6386.36, 6392.14], [5257.83, 5258.58],\
+    #          [5256.03, 5256.7]]
+    ranges = [[5979.25, 5983.13], [6066.49, 6075.55],\
+              [6195.95, 6198.74], [6386.36, 6392.14], [5257.83, 5258.58],\
               [5256.03, 5256.7]]
     sn = []
-    for r in range(len(ranges)):
-        data_range = data[np.where((x >= ranges[r][0]) & (x <= ranges[r][1]))[0]]
-        if len(data_range) != 0:
+    beq = pyasl.BSEqSamp()
+    for r in ranges:
+        data_range = data[np.where((x >= r[0]) & (x <= r[1]))[0]]
+        if data_range.size > 4:
             m = np.median(data_range)
+            #s1, _ = beq.betaSigma(data_range, 1, 1, returnMAD=True)
+            #n = len(data_range)
+            #s2 = 0.6052697*np.median(np.abs(2.0*data_range[2:n-2]-data_range[0:n-4]-data_range[4:n]))
             s = np.std(data_range)
-            sn.append(m/s)
+            #print(m/s1, m/s2, m/s)
+            sn.append(old_div(m, s))
 
             del m, s
 
         del data_range
 
     del ranges
+    inonan = np.where(~np.isnan(sn))[0]
+    return min(np.median(np.array(sn)[inonan]), 300)
 
-    return np.median(sn)
 
-
-#*****************************************************************************
-#*****************************************************************************
 #*****************************************************************************
 
 
@@ -44,7 +55,7 @@ def values(h, j):# funcion que extrae las longitudes de onda del header
     CRPIX = float(h['CRPIX' + str(j)])
     CDELT = float(h['CDELT' + str(j)])
     CRVAL = float(h['CRVAL' + str(j)])
-    val = np.zeros(N);
+    val = np.zeros(N)
     for i in range(N):
         val[i] = (i + 1 - CRPIX)*CDELT + CRVAL
 
@@ -53,705 +64,513 @@ def values(h, j):# funcion que extrae las longitudes de onda del header
 
 
 #*****************************************************************************
-#*****************************************************************************
+
+def create_new_wave_flux(xmin, xmax, N, rangos_w, deltas, tcks):
+    xnew = np.linspace(xmin, xmax, N)
+    ynew = np.zeros(N)
+
+    for p, _ in enumerate(deltas):
+        xmin_p0 = rangos_w[p][0]
+        xmax_p0 = rangos_w[p][1]
+
+        indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
+        tck = tcks[p]
+        ynew[indices] = tck(xnew[indices])
+        del indices, xmin_p0, xmax_p0, tck
+
+    return xnew, ynew
+
+def combine_orders(wave, flux, reverse=False):
+    rangos_w = []
+    tcks = []
+    deltas = []
+    rangos = []
+
+    for x, y in zip(wave, flux):
+        inan = np.where((np.isnan(y) == False) & (x != 0.0))[0]
+        x = x[inan]
+        y = y[inan]
+        del inan
+        if x.size == 0:
+            continue
+        rangos_w.append([x[0], x[-1]])
+        deltas.append(np.mean(x[1:] - x[:-1]))
+        tck_flux = interpolate.UnivariateSpline(x, y, k=5, s=0)
+        tcks.append(tck_flux)
+        rangos.append(x[0])
+        rangos.append(x[-1])
+
+        del tck_flux
+
+    Nnew = old_div(abs(min(rangos) - max(rangos)), max(deltas))
+    Nnew = int(Nnew) if round(Nnew) >= Nnew else int(Nnew+1)
+
+    if reverse:
+        deltas.reverse()
+        rangos_w.reverse()
+        tcks.reverse()
+
+    xnew, ynew = create_new_wave_flux(min(rangos), max(rangos), Nnew, rangos_w, deltas, tcks)
+    del Nnew, rangos_w, deltas, tcks
+    return xnew, ynew
+
+
 #*****************************************************************************
 
-def harps(starname, abundances = False):
+def other_instrument(starname, do_restframe=True, new_res=False, make_1d=False):
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
+
+    hdu = fits.open('%s.fits' % starname)
+    header0 = hdu[0].header
+
+    if 'SNR' in header0.keys():
+        snr = header0['SNR']
+    
+    # Assuming there is only one header in the data
+    if 'CRPIX1' in header0.keys() and 'CDELT1' in header0.keys() and 'CRVAL1' in header0.keys():
+        wave, flux = pyasl.read1dFitsSpec('%s.fits' % starname)
+    else:
+        if header0['NAXIS'] == 2:
+            wave = hdu[0].data[0]
+            flux = hdu[0].data[1]
+
+            inan = np.where(~np.isnan(flux))[0]
+            wave = wave[inan]
+            flux = flux[inan]
+            del inan
+        elif header0['NAXIS'] == 3 and header0['NAXIS1'] == 2:
+            dataT = hdu[0].data.T
+            wave = dataT[0].T
+            flux = dataT[1].T
+            del dataT
+
+            #inan = np.where((~np.isnan(flux)) & (wave != 0.0))[0]
+            #wave = wave[inan]
+            #flux = flux[inan]
+
+            wave_1d, flux_1d = combine_orders(wave, flux, reverse=True)
+            #del inan
+
+        elif header0['NAXIS'] == 3 and header0['NAXIS1'] > 2:
+            wave = hdu[0].data[0]
+            flux = hdu[0].data[1]
+
+            #inan = np.where(~np.isnan(flux))[0]
+            #wave = wave[inan]
+            #flux = flux[inan]
+
+            wave_1d, flux_1d = combine_orders(wave, flux, reverse=True)
+            #del inan
+
+
+
+    hdu.close()
+    del hdu
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
+    if os.path.isfile(starname + '_res.fits'):
+        return snr
+    return 0.0
+
+
+
+def harps(starname, do_restframe=True, new_res=False, make_1d=False):
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+
+    if os.path.isfile(starname + '_res.fits') and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
 
     if os.path.isfile(starname + '.fits'):
-
-        hdu = pyfits.open(starname + '.fits')
+        hdu = fits.open(starname + '.fits')
         header0 = hdu[0].header
 
-        snr = 0.0
-
         if hdu[0].data is None:
-            xnew = hdu[1].data['WAVE'][0]
-            ynew = hdu[1].data['FLUX'][0]
-            dif = [xnew[i+1] - xnew[i] for i in range(len(xnew)-1)]
-            delta_x = np.mean(dif)
+            try:
+                wave = hdu[1].data['WAVE'][0]
+                flux = hdu[1].data['FLUX'][0]
+            except (ValueError, KeyError):
+                wave = hdu[1].data['wav']
+                flux = hdu[1].data['flux']
 
-            if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
-                sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
-                snr = np.median(sn)
-                del sn
+            if 'HIERARCH ESO DRS SPE EXT SN0' in header0:
+                snr = np.median([header0['HIERARCH ESO DRS SPE EXT SN%d' % i] for i in range(72)])
+
             hdu.close()
-
-
-            # Create the new image
-
-            os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-            os.system('rm -f ' + starname + '.fits')
-
-            pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-            hdu = pyfits.open(starname + '.fits', mode = 'update')
-            header_new = hdu[0].header
-
-            header_new['CRPIX1'] = (1., 'Reference pixel')
-            header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-            header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-            if 'RA' and 'DEC' in header0.keys():
-                header_new['RA'] = (header0['RA'], '')
-                header_new['DEC'] = (header0['DEC'], '')
-
-            header_new.add_comment('Image created after combining orders')
-
-            hdu.flush()
-            hdu.close()
-
-            del hdu, header0, xnew, ynew, dif, delta_x, header_new
-
+            del hdu
 
         else:
-
-
             if len(hdu[0].data.shape) == 1:
-
-                if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
-                    sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
-                    snr = np.median(sn)
-                    del sn
-                elif ('SNR' in header0):
+                if 'ESO DRS SPE EXT SN0' in header0:
+                    snr = np.median([header0['ESO DRS SPE EXT SN%d' % i] for i in range(72)])
+                elif 'ESO DRS CAL EXT SN0' in header0:
+                    snr = np.median([header0['ESO DRS CAL EXT SN%d' % i] for i in range(72)])
+                elif 'SNR' in header0:
                     snr = header0['SNR']
                 hdu.close()
-
-                del hdu, header0
+                del hdu
+                wave, flux = pyasl.read1dFitsSpec('%s.fits' % starname)
 
             elif (len(hdu[0].data.shape) == 2) and (hdu[0].data.shape[0] == 2):
+                wave = hdu[0].data[0]
+                flux = hdu[0].data[1]
 
-                xnew_0 = hdu[0].data[0]
-                ynew_0 = hdu[0].data[1]
+                inan = np.where(~np.isnan(flux))[0]
+                wave = wave[inan]
+                flux = flux[inan]
 
                 hdu.close()
+                del hdu
 
-                inan = np.where(np.isnan(ynew_0) == False)[0]
-
-                tck = interpolate.InterpolatedUnivariateSpline(xnew_0[inan], ynew_0[inan], k = 5)
-
-                del inan
-
-                delta_av = np.median([xnew_0[i+1] - xnew_0[i] for i in range(len(xnew_0)-1)])
-
-                xnew = np.arange(xnew_0[0], xnew_0[-1], delta_av)
-                ynew = tck.__call__(xnew)
-
-                os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-                os.system('rm -f ' + starname + '.fits')
-
-                pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-                hdu = pyfits.open(starname + '.fits', mode = 'update')
-                header_new = hdu[0].header
-
-                header_new['CRPIX1'] = (1., 'Reference pixel')
-                header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-                header_new['CDELT1'] = (delta_av, 'Coordinate increment per pixel')
-
-                if 'RA' and 'DEC' in header0.keys():
-                    header_new['RA'] = (header0['RA'], '')
-                    header_new['DEC'] = (header0['DEC'], '')
-
-                header_new.add_comment('Image created after combining orders')
-
-                hdu.flush()
-                hdu.close()
-
-                if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
-                    sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
-                    snr = np.median(sn)
-                    del sn
-                elif ('SNR' in header0):
+                if 'HIERARCH ESO DRS SPE EXT SN0' in header0:
+                    snr = np.median([header0['HIERARCH ESO DRS SPE EXT SN%d' % i]
+                                     for i in range(72)])
+                elif 'SNR' in header0:
                     snr = header0['SNR']
-
-                del hdu, header0
 
             elif (len(hdu[0].data.shape) == 2) and (hdu[0].data.shape[1] == 2):
+                wave = hdu[0].data[:, 0]
+                flux = hdu[0].data[:, 1]
 
-                xnew_0 = hdu[0].data[:,0]
-                ynew_0 = hdu[0].data[:,1]
+                inan = np.where(~np.isnan(flux))[0]
+                wave = wave[inan]
+                flux = flux[inan]
 
                 hdu.close()
+                del hdu
 
-                inan = np.where(np.isnan(ynew_0) == False)[0]
-
-                tck = interpolate.InterpolatedUnivariateSpline(xnew_0[inan], ynew_0[inan], k = 5)
-
-                del inan
-
-                delta_av = np.median([xnew_0[i+1] - xnew_0[i] for i in range(len(xnew_0)-1)])
-
-                xnew = np.arange(xnew_0[0], xnew_0[-1], delta_av)
-                ynew = tck.__call__(xnew)
-
-                os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-                os.system('rm -f ' + starname + '.fits')
-
-                pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-                hdu = pyfits.open(starname + '.fits', mode = 'update')
-                header_new = hdu[0].header
-
-                header_new['CRPIX1'] = (1., 'Reference pixel')
-                header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-                header_new['CDELT1'] = (delta_av, 'Coordinate increment per pixel')
-
-                if 'RA' and 'DEC' in header0.keys():
-                    header_new['RA'] = (header0['RA'], '')
-                    header_new['DEC'] = (header0['DEC'], '')
-
-                header_new.add_comment('Image created after combining orders')
-
-                hdu.flush()
-                hdu.close()
-
-                if ('HIERARCH ESO DRS SPE EXT SN0' in header0):
-                    sn = [header0['HIERARCH ESO DRS SPE EXT SN' + str(i)] for i in range(72)]
-                    snr = np.median(sn)
-                    del sn
-                elif ('SNR' in header0):
+                if 'HIERARCH ESO DRS SPE EXT SN0' in header0:
+                    snr = np.median([header0['HIERARCH ESO DRS SPE EXT SN%d' % i]
+                                     for i in range(72)])
+                elif 'SNR' in header0:
                     snr = header0['SNR']
 
-                del hdu, header0
-
             else:
+                flux = hdu[0].data[5]
+                wave = hdu[0].data[0]
+                sn = hdu[0].data[8]
 
-                rangos_w = []
-                tcks = []
-                deltas = []
-
-                rangos = []
-
-                data = hdu[0].data[3]
-                x = hdu[0].data[0]
-
-                for i in range(x.shape[0]):
-                    data_i = data[i]
-                    x_i = x[i]
-
-                    rangos_w.append([x_i[0], x_i[-1]])
-                    deltas.append(x_i[1] - x_i[0])
-                    tck_flux = interpolate.InterpolatedUnivariateSpline(x_i, data_i, k = 5)
-                    tcks.append(tck_flux)
-
-                    rangos.append(x_i[0])
-                    rangos.append(x_i[-1])
-
-                    del data_i, x_i, tck_flux
-
-                del data, x
+                wave_1d, flux_1d = combine_orders(wave, flux, reverse=True)
 
                 hdu.close()
+
+                snr = [np.median(sno[np.where(sno > 0.0)[0]]) for sno in sn\
+                        if np.where(sno > 0.0)[0].size > 0]
+                del sn, hdu
+
+    else:
+        header0 = None
+
+        wave, flux = np.loadtxt('%s.dat' % starname).T
+        isort = np.argsort(wave)
+        wave = wave[isort]
+        flux = flux[isort]
+        inan = np.where(~np.isnan(flux))[0]
+        wave = wave[inan]
+        flux = flux[inan]
+        
+        del isort, inan
+
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
+    if os.path.isfile('%s_res.fits' % starname):
+        return snr
+    return 0.0
+
+
+#*****************************************************************************
+#*****************************************************************************
+#*****************************************************************************
+
+
+def feros(starname, do_restframe=True, new_res=False, make_1d=False):
+
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named ' + starname + '_res.fits')
+        return 100.0
+
+    hdu = fits.open(starname + '.fits')
+    header0 = hdu[0].header
+
+    if hdu[0].data is None:
+
+        wave = hdu[1].data['WAVE'][0]
+        flux = hdu[1].data['FLUX'][0]
+
+        inan = np.where(~np.isnan(flux))
+        wave = wave[inan]
+        flux = flux[inan]
+
+        if 'SNR' in header0:
+            snr = header0['SNR']
+        hdu.close()
+        del hdu
+
+    else:
+        if len(hdu[0].data.shape) >= 2:
+            rangos_w = []
+            tcks = []
+            deltas = []
+
+            rangos = []
+            
+            if ('NAXIS3' not in header0) and (header0['NAXIS2'] == 2):
+                wave = hdu[0].data[0]
+                flux = hdu[0].data[1]
+                hdu.close()
+            
+            else:
+                if ('PIPELINE' in header0) or ('NAXIS3' in header0):
+                    if header0['NAXIS3'] > 2:
+                        wave = hdu[0].data[0]
+                        flux = hdu[0].data[5]
+                        sn = hdu[0].data[8]
+
+                        data = hdu[0].data[5]
+                        x = hdu[0].data[0]
+                        #print(np.unique(flux))
+                        if len(np.unique(flux)) <= 1:
+                            flux = hdu[0].data[1]
+                            data = hdu[0].data[1]
+
+                        snr = np.array([np.median(sno[np.where(sno > 0.0)[0]]) for sno in sn\
+                                                    if np.where(sno > 0.0)[0].size > 0])
+
+                    else:
+                        wave = hdu[0].data[0]
+                        flux = hdu[0].data[1]
+    
+                        data = hdu[0].data[1]
+                        x = hdu[0].data[0]
+
+                    for i in range(x.shape[0]):
+                        data_i = data[i]
+                        x_i = x[i]
+
+                        rangos_w.append([x_i[0], x_i[-1]])
+                        deltas.append(x_i[1] - x_i[0])
+                        tck_flux = interpolate.InterpolatedUnivariateSpline(x_i, data_i, k=5)
+                        tcks.append(tck_flux)
+
+                        rangos.append(x_i[0])
+                        rangos.append(x_i[-1])
+
+                        del data_i, x_i, tck_flux
+
+                    del data, x
+
+                else:
+                    wave = np.array([])
+                    flux = np.array([])
+
+                    for i in range(39):
+                        header = hdu[i].header
+                        data = hdu[i].data
+                        x = values(header, 1)
+
+                        rangos_w.append([x[0], x[-1]])
+                        deltas.append(x[1] - x[0])
+                        tck_flux = interpolate.InterpolatedUnivariateSpline(x, data, k=5)
+                        tcks.append(tck_flux)
+
+                        rangos.append(x[0])
+                        rangos.append(x[-1])
+
+                        wave = np.append(wave, x)
+                        flux = np.append(flux, data)
+
+                        del header, data, x, tck_flux
+
+                hdu.close()
+                del hdu
 
                 delta_x = max(deltas)
                 xmin = min(rangos)
                 xmax = max(rangos)
-                Nnew = abs(xmin - xmax)/delta_x
-                if round(Nnew) < Nnew: Nnew = Nnew + 1
-                Nnew = int(Nnew)
-
-                xnew = np.linspace(xmin, xmax, Nnew)
-                ynew = np.zeros(len(xnew))
+                Nnew = old_div(abs(xmin - xmax), delta_x)
+                Nnew = int(Nnew) if round(Nnew) >= Nnew else int(Nnew+1)
 
                 deltas.reverse()
                 rangos_w.reverse()
                 tcks.reverse()
 
-                for p in range(len(deltas)):
-                    xmin_p0 = rangos_w[p][0]
-                    xmax_p0 = rangos_w[p][1]
+                wave_1d, flux_1d = create_new_wave_flux(xmin, xmax, Nnew, rangos_w, deltas, tcks)
 
-                    indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-                    tck = tcks[p]
-                    ynew[indices] = tck.__call__(xnew[indices])
+        else:
+            try:
+                wave, flux = pyasl.read1dFitsSpec('%s.fits' % starname)
+            except TypeError:
+                crpix1 = float(header0['CRPIX1'])
+                cdelt1 = float(header0['CDELT1'])
+                crval1 = float(header0['CRVAL1'])
 
-                    del xmin_p0, xmax_p0, indices, tck
+                N = int(header0['NAXIS1'])
+                wave = ((np.arange(N) + 1.0) - crpix1) * cdelt1 + crval1
+                flux = np.array(hdu[0].data)
 
+                header0['CRPIX1'] = crpix1
+                header0['CDELT1'] = cdelt1
+                header0['CRVAL1'] = crval1
 
-                # Creates the fits file with the 1D spectra
-
-                os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-                os.system('rm -f ' + starname + '.fits')
-
-                pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-                hdu = pyfits.open(starname + '.fits', mode = 'update')
-                header_new = hdu[0].header
-
-                header_new['CRPIX1'] = (1., 'Reference pixel')
-                header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-                header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-                if 'RA' and 'DEC' in header0.keys():
-                    header_new['RA'] = (header0['RA'], '')
-                    header_new['DEC'] = (header0['DEC'], '')
-
-                header_new.add_comment('Image created after combining orders')
-
-                hdu.flush()
-                hdu.close()
-
-                del header0, rangos_w, tcks, deltas, rangos, xnew, ynew,\
-                    delta_x, xmin, xmax, Nnew, header_new, hdu
-
-    else:
-
-        xnew_0, ynew_0 = np.loadtxt(starname + '.dat').T
-        snr = 0.0
-
-        inan = np.where(np.isnan(ynew_0) == False)[0]
-
-        tck = interpolate.InterpolatedUnivariateSpline(xnew_0[inan], ynew_0[inan], k = 5)
-
-        del inan
-
-        delta_av = np.median([xnew_0[i+1] - xnew_0[i] for i in range(len(xnew_0)-1)])
-
-        xnew = np.arange(xnew_0[0], xnew_0[-1], delta_av)
-        ynew = tck.__call__(xnew)
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_av, 'Coordinate increment per pixel')
-
-        header_new.add_comment('Image created from .dat file')
-
-        hdu.flush()
-        hdu.close()
-
-        del hdu, header_new, xnew_0, ynew_0, tck, delta_av, xnew, ynew
-
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-    ##############################################
-    # Plot absorption lines
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        if snr == 0.0:
-            snr = compute_snr(x, data)
-
-        ab = abundances
-        plot_lines(x, data, starname, abundances = ab, save_fig = True)
-
-        del x, data, ab
-
-        return snr
-
-    else:
-        return 0.0
-
-
-#*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
-
-
-def feros(starname, abundances = False):
-
-    hdu = pyfits.open(starname + '.fits')
-    header0 = hdu[0].header
-
-    snr = 0.0
-
-    if hdu[0].data is None:
-        xnew = hdu[1].data['WAVE'][0]
-        ynew = hdu[1].data['FLUX'][0]
-        dif = [xnew[i+1] - xnew[i] for i in range(len(xnew)-1)]
-        delta_x = np.mean(dif)
-
-        if 'SNR' in header0.keys():
-            snr = header0['SNR']
-        hdu.close()
-
-        # Create the new image
-
-        os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-        os.system('rm -f ' + starname + '.fits')
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-        if 'RA' and 'DEC' in header0.keys():
-            header_new['RA'] = (header0['RA'], '')
-            header_new['DEC'] = (header0['DEC'], '')
-
-        header_new.add_comment('Image created after combining orders')
-
-        hdu.flush()
-        hdu.close()
-
-        del xnew, ynew, dif, delta_x, header_new
-
-    else:
-        if len(hdu[0].data.shape) >= 2:
-            snr = feros_orders(starname, abundances = abundances)
             hdu.close()
-            del hdu, header0
-            return snr
-        hdu.close()
+            del hdu
 
-    del hdu, header0
+    if (snr is None) and ('SNR' in header0):
+        snr = header0['SNR']
 
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
 
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        if snr == 0.0:
-            snr = compute_snr(x, data)
-
-        ab = abundances
-        plot_lines(x, data, starname, abundances = ab)
-
-        del x, data, ab
-
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
         return snr
-
-    else:
-        return 0.0
+    return 0.0
 
 
 #*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
 
 
-def feros_orders(starname, abundances = False, do_restframe = True):
+def aat(starname, do_restframe=True, new_res=False, make_1d=False):
 
-    hdulist = pyfits.open(starname + '.fits')
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
 
+    hdulist = fits.open('%s.fits' % starname)
     header0 = hdulist[0].header
 
-    is_raw_image = True
-    if 'COMMENT' in header0.keys():
-        if header0['COMMENT'] == 'Image created after combining orders':
-            is_raw_image = False
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
 
-    if is_raw_image:
+    data = hdulist[0].data
+    wave = data[:52]
+    flux = data[52:]
 
-        rangos_w = []
-        tcks = []
-        deltas = []
+    hdulist.close()
+    del hdulist
 
-        rangos = []
+    wave_1d, flux_1d = combine_orders(wave, flux)
 
-        if ('PIPELINE' in header0.keys()) or ('NAXIS3' in header0.keys()):
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, data, header0
 
-            if header0['NAXIS3'] > 2:
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+        return snr
+    return 0.0
 
-                data = hdulist[0].data[5]
-                x = hdulist[0].data[0]
-                #print 'hola'
 
+#*****************************************************************************
+
+def lconres(starname, do_restframe=True, new_res=False, make_1d=False):
+    
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
+
+    hdulist = fits.open('%s.fits' % starname)
+    header0 = hdulist[0].header
+
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+
+    wave = hdulist['WAVESPEC'].data
+    flux = hdulist['SPECBLAZE'].data
+
+    hdulist.close()
+    del hdulist
+
+    wave_1d, flux_1d = combine_orders(wave, flux)#, reverse=True)
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
+
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+        return snr
+    return 0.0
+
+
+
+#*****************************************************************************
+
+
+def uves(starname, do_restframe=True, new_res=False, make_1d=False):
+
+    snr = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+    header0 = None
+
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
+        
+    if os.path.isfile('%s.fits' % starname):
+        archivo = starname + '.fits'
+        if fits.getval(archivo, 'NAXIS', 0) > 1:
+            snr = fits.getval(archivo, 'SNR', 0)
+            header0 = fits.getheader(archivo, 0)
+            data = fits.getdata(archivo, 1)
+            wave = data[0][0]
+            flux = data[0][3]
+            wave_1d = np.copy(wave)
+            flux_1d = np.copy(flux)
+            del data
+        else:
+            d = fits.open(archivo)
+            if len(d) == 2:
+                snr = fits.getval(archivo, 'SNR', 0)
+                header0 = fits.getheader(archivo, 0)
+                data = fits.getdata(archivo, 1)
+                wave = data['WAVE'][0]
+                flux = data['FLUX'][0]
+                wave_1d = np.copy(wave)
+                flux_1d = np.copy(flux)
+                del data
             else:
-                data = hdulist[0].data[1]
-                x = hdulist[0].data[0]
+                wave, flux = pyasl.read1dFitsSpec(archivo)
+                header0 = fits.getheader(archivo, 0)
+                wave_1d = np.copy(wave)
+                flux_1d = np.copy(flux)
+            d.close()
+            del d
 
-            for i in range(x.shape[0]):
-                data_i = data[i]
-                x_i = x[i]
+        snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr,
+                        do_restframe=do_restframe, make_1d=make_1d)
+        del wave, flux, wave_1d, flux_1d, header0
 
-                rangos_w.append([x_i[0], x_i[-1]])
-                deltas.append(x_i[1] - x_i[0])
-                tck_flux = interpolate.InterpolatedUnivariateSpline(x_i, data_i, k = 5)
-                tcks.append(tck_flux)
-
-                rangos.append(x_i[0])
-                rangos.append(x_i[-1])
-
-                del data_i, x_i, tck_flux
-
-            del data, x
-
-        else:
-
-            for i in range(39):
-                header = hdulist[i].header
-                data = hdulist[i].data
-                x = values(header, 1)
-
-                rangos_w.append([x[0], x[-1]])
-                deltas.append(x[1] - x[0])
-                tck_flux = interpolate.InterpolatedUnivariateSpline(x, data, k = 5)
-                tcks.append(tck_flux)
-
-                rangos.append(x[0])
-                rangos.append(x[-1])
-
-                del header, data, x, tck_flux
-
-        hdulist.close()
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        deltas.reverse()
-        rangos_w.reverse()
-        tcks.reverse()
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-            del xmin_p0, xmax_p0, indices, tck
-
-
-        # Creates the fits file with the 1D spectra
-
-        os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-        os.system('rm -f ' + starname + '.fits')
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-        if 'RA' and 'DEC' in header0.keys():
-            header_new['RA'] = (header0['RA'], '')
-            header_new['DEC'] = (header0['DEC'], '')
-
-        header_new.add_comment('Image created after combining orders')
-
-        hdu.flush()
-        hdu.close()
-
-        del header0, rangos_w, tcks, deltas, rangos, xnew, ynew,\
-            delta_x, xmin, xmax, Nnew, header_new, hdu
-
-    else:
-        hdulist.close()
-        del header0
-
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        if do_restframe:
-            restframe(starname + '.fits')
-        else:
-            os.system('cp ' + starname + '.fits ' + starname + '_res.fits')
-            print '\t\tNo restframe correction will be performed.'
-
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        snr = compute_snr(x, data)
-
-        ab = abundances
-
-        plot_lines(x, data, starname, abundances = ab)
-        del x, data, ab
-
-        return snr
-
-    else:
+        if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+            return snr
         return 0.0
 
-
-#*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
-
-
-def aat(starname, abundances = False):
-
-    hdulist = pyfits.open(starname + '.fits')
-    header0 = hdulist[0].header
-
-    if os.path.isfile(starname + '_original.fits') == False:
-
-        data = hdulist[0].data
-
-        wave = data[:52]
-        flux = data[52:]
-        hdulist.close()
-
-        rangos_w = []
-        tcks = []
-        deltas = []
-        rangos = []
-
-        for i in range(len(wave)):
-            x = wave[i]
-            y = flux[i]
-
-            rangos_w.append([x[0], x[-1]])
-            dif = np.array([x[i+1]-x[i] for i in range(len(x)-1)])
-            deltas.append(np.mean(dif))
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x, y, k = 5)
-            tcks.append(tck_flux)
-
-            rangos.append(x[0])
-            rangos.append(x[-1])
-
-            del x, y, dif, tck_flux
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-            del indices, tck
-
-
-        # Creates the fits file with the 1D spectra
-        #------------------------------------------
-
-        os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-        os.system('rm -f ' + starname + '.fits')
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-        header_new.add_comment('Image created after combining orders')
-
-        hdu.flush()
-        hdu.close()
-
-        del data, wave, flux, deltas, rangos, tcks, delta_x, xmin, xmax, Nnew,\
-            xnew, ynew, header_new, rangos_w
-
-    else:
-        hdulist.close()
-
-
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        ##############################################
-        # Plots the lines
-        ##############################################
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        snr = compute_snr(x, data)
-
-        ab = abundances
-
-        plot_lines(x, data, starname, abundances = ab)
-
-        del x, data, ab
-
-        return snr
-
-    else:
-        return 0.
-
-
-#*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
-
-
-def uves(starname, abundances = False):
-
-    ##############################################
     # Creates the 1D spectra fits file
     # Combining the red and the blue parts
     # of the star
-    ##############################################
 
-    archivo1 = starname + '_red.fits'
-    archivo2 = starname + '_blue.fits'
+    archivo1 = '%s_red.fits' % starname
+    archivo2 = '%s_blue.fits' % starname
 
     # Defines the red part
     #-------------------------------------------
-    hdulist1 = pyfits.open(archivo1)
+    hdulist1 = fits.open(archivo1)
 
     header1 = hdulist1[1].header
     data1 = hdulist1[1].data
-    x1 = data1.field('WAVE')[0]
-    if ('FLUX' in data1.columns.names):
+    x1 = np.array(data1.field('WAVE')[0])
+    if 'FLUX' in data1.columns.names:
         flux1 = data1.field('FLUX')[0]
     else:
         flux1 = data1.field('FLUX_REDUCED')[0]
@@ -766,12 +585,12 @@ def uves(starname, abundances = False):
     #--------------------------------------------
     # Defines the blue part
     #--------------------------------------------
-    hdulist2 = pyfits.open(archivo2)
+    hdulist2 = fits.open(archivo2)
 
     header2 = hdulist2[1].header
     data2 = hdulist2[1].data
-    x2 = data2.field('WAVE')[0]
-    if ('FLUX' in data2.columns.names):
+    x2 = np.array(data2.field('WAVE')[0])
+    if 'FLUX' in data2.columns.names:
         flux2 = data2.field('FLUX')[0]
     else:
         flux2 = data2.field('FLUX_REDUCED')[0]
@@ -788,894 +607,484 @@ def uves(starname, abundances = False):
     #--------------------------------------------
     x = []
     flux = []
-    for i in range(len(x2)):
-        if (xmin1 <= x2[i] <= xmax1) == False:
-            x.append(x2[i])
+    for i, x2_ in enumerate(x2):
+        if ~(xmin1 <= x2_ <= xmax1):
+            x.append(x2_)
             flux.append(flux2[i])
         else:
             if sn2 > sn1:
-                x.append(x2[i])
+                x.append(x2_)
                 flux.append(flux2[i])
-    for i in range(len(x1)):
-        if (xmin2 <= x1[i] <= xmax2) == False:
-            x.append(x1[i])
+    for i, x1_ in enumerate(x1):
+        if ~(xmin2 <= x1_ <= xmax2):
+            x.append(x1_)
             flux.append(flux1[i])
         else:
             if sn1 > sn2:
-                x.append(x1[i])
+                x.append(x1_)
                 flux.append(flux1[i])
 
     xmax = max(x)
     xmin = min(x)
 
-    del header1, data1, flux1, header1_0,\
-        header2, data2, flux2, header2_0,\
-        hdulist1, hdulist2
+    del header1, data1, header1_0, header2, data2, header2_0, hdulist1, hdulist2
 
     #--------------------------------------------
 
-    snr = [[xmin2, xmax2, sn2], [xmin1, xmax1, sn1]]
+    isort = np.argsort(np.array(x))
+    x = np.array(x)[isort]
+    flux = np.array(flux)[isort]
+    del isort
 
-    if os.path.isfile(starname + '.fits'):
-        print '\t\tImage ' + starname + '.fits has already been created.'
-        print '\t\tSkipping the next step.\n'
+    # Create new wavelength and flux arrays
+    #---------------------------------------------
+    mean2 = np.mean(x2[1:]-x2[:-1])
+    mean1 = np.mean(x1[1:]-x1[:-1])
 
-    else:
+    mean2 = round(mean2, 11)
+    mean1 = round(mean1, 11)
 
-        arr = np.zeros((len(x), 2))
-        for i in range(len(x)):
-            arr[i][0] = x[i]
-            arr[i][1] = flux[i]
+    delta_x = mean2 if mean2 > mean1 else mean1
+    Nnew = (xmax - xmin)/ delta_x
+    Nnew = int(Nnew) if round(Nnew) >= Nnew else int(Nnew+1)
 
-        arr_sort = arr[np.argsort(arr[:,0])]
-        x_sort = [arr[i][0] for i in range(len(x))]
-        flux_sort = [arr[i][1] for i in range(len(x))]
+    xnew = np.linspace(xmin, xmax, Nnew)
+    ynew = np.zeros(Nnew)
 
+    #----------------------------------------------
+    # Defines the cero_flux array
+    #----------------------------------------------
+    x_flux0 = x[np.where(flux == 0.)]
 
-        # Create new wavelength and flux arrays
-        #---------------------------------------------
-        deltas = []
-        for i in range(len(x2) - 1):
-            deltas.append(x2[i+1] - x2[i])
-        mean2 = np.mean(deltas)
+    xini = x_flux0[0]
+    cero_flux = []
 
-        deltas2 = []
-        for i in range(len(x1) - 1):
-            deltas2.append(x1[i+1] - x1[i])
-        mean1 = np.mean(deltas2)
+    for j in range(1, len(x_flux0)-1):
+        xfinal = x_flux0[j]
+        if (x_flux0[j+1] - xfinal) > 10.:
+            cero_flux.append([xini, xfinal])
+            xini = x_flux0[j+1]
+            p = int(np.where(x == xini)[0])
+            if (x[p] - x[p-1]) > 10.:
+                cero_flux.append([xfinal, xini])
 
-        mean2 = round(mean2, 11)
-        mean1 = round(mean1, 11)
+        del xfinal
 
-        delta_x = 0
-        if mean2 > mean1: delta_x = mean2
-        else: delta_x = mean1
+    cero_flux = np.array(sorted(cero_flux))
 
+    #----------------------------------------------
+    # Defines the non_cero_flux array
+    #----------------------------------------------
 
+    non_cero_flux = []
+    if cero_flux[0][0] != x[0]:
+        indice = int(np.where(x == cero_flux[1][0])[0])
+        non_cero_flux.append([x[0], x[indice-1]])
+        del indice
+    for p0, p1 in zip(cero_flux[:-1], cero_flux[1:]):
+        indice_min = int(np.where(x == p0[1])[0])
+        indice_max = int(np.where(x == p1[0])[0])
+        if indice_min != indice_max:
+            non_cero_flux.append([x[indice_min+1], x[indice_max-1]])
+        del indice_min, indice_max
+    if x[-1] != cero_flux[-1][1]:
+        indice = int(np.where(x == cero_flux[-1][1])[0])
+        non_cero_flux.append([x[indice+1], x[-1]])
+        del indice
+    non_cero_flux = np.array(non_cero_flux)
 
-        Nnew = (xmax - xmin)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew+1
-        Nnew = int(Nnew)
+    #----------------------------------------------
+    # Replace the values given by the interpolation
+    # in the ranges at which the flux is different
+    # from cero.
+    #----------------------------------------------
 
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
+    for non_cero in non_cero_flux:
+        x_1 = non_cero[0]
+        x_2 = non_cero[1]
+        i1 = int(np.where(x == x_1)[0])
+        i2 = int(np.where(x == x_2)[0])
+        rango_x = x[i1: i2+1]
+        rango_flux = flux[i1: i2+1]
+        tck = interpolate.UnivariateSpline(rango_x, rango_flux, k=5, s=0)
+        ii = np.where((xnew >= x_1) & (xnew <= x_2))[0]
+        xnew_rango = xnew[ii]
+        i1_rango = int(np.where(xnew == xnew_rango[0])[0])
+        i2_rango = int(np.where(xnew == xnew_rango[-1])[0])
+        ynew[ii[:i2_rango-i1_rango+1]] = tck(xnew_rango[:i2_rango-i1_rango+1])
 
+        del x_1, x_2, i1, i2, rango_x, rango_flux, tck, xnew_rango, i1_rango, i2_rango, ii
 
-        #----------------------------------------------
+    del mean1, mean2, delta_x, Nnew,\
+        x_flux0, cero_flux, non_cero_flux
 
-        # Defines the cero_flux array
-        #----------------------------------------------
-        flux = np.array(flux_sort)
-        x = np.array(x_sort)
-        x_flux0 = x[np.where(flux == 0.)]
+    #--------------------------------------------
+    # Create an array containing the red and blue
+    # parts, as well as the two different SNR
+    #--------------------------------------------
 
-        xini = x_flux0[0]
-        cero_flux = []
+    isize = max(len(x1), len(x2))
+    wave = np.zeros((2, isize))
+    flux = np.zeros((2, isize))
 
+    wave[0, :len(x1)] = x1
+    wave[1, :len(x2)] = x2
+    flux[0, :len(x1)] = flux1
+    flux[1, :len(x2)] = flux2
 
-        for j in range(1, len(x_flux0)-1):
-            xfinal = x_flux0[j]
-            if (x_flux0[j+1] - xfinal) > 10.:
-                cero_flux.append([xini, xfinal])
-                xini = x_flux0[j+1]
-                p = int(np.where(x == xini)[0])
-                if (x[p] - x[p-1])>10.:
-                    cero_flux.append([xfinal, xini])
+    wave_1d = xnew
+    flux_1d = ynew
+    snr = np.array([sn1, sn2])
 
-                del p, xini
-            del xfinal
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
+    del x1, x2, flux1, flux2, xnew, ynew
 
-        cero_flux = sorted(cero_flux)
-
-        #----------------------------------------------
-
-        # Defines the non_cero_flux array
-        #----------------------------------------------
-
-        non_cero_flux = []
-        if cero_flux[0][0] != x[0]:
-            indice=int(np.where(x == cero_flux[1][0])[0])
-            non_cero_flux.append([x[0], x[indice-1]])
-            del indice
-        for p in range(len(cero_flux)-1):
-            indice_min = int(np.where(x == cero_flux[p][1])[0])
-            indice_max = int(np.where(x == cero_flux[p+1][0])[0])
-            if indice_min != indice_max:
-                non_cero_flux.append([x[indice_min+1], x[indice_max-1]])
-            del indice_min, indice_max
-        if x[-1]!=cero_flux[-1][1]:
-            indice = int(np.where(x == cero_flux[-1][1])[0])
-            non_cero_flux.append([x[indice+1], x[-1]])
-            del indice
-
-        #----------------------------------------------
-
-        # Replace the values given by the interpolation
-        # in the ranges at which the flux is different
-        # from cero.
-        #----------------------------------------------
-
-        for i in range(len(non_cero_flux)):
-            x_1 = non_cero_flux[i][0]
-            x_2 = non_cero_flux[i][1]
-            indice1 = int(np.where(x == x_1)[0])
-            indice2 = int(np.where(x == x_2)[0])
-            rango_x = [x[j] for j in range(indice1,indice2+1)]
-            rango_flux = [flux[j] for j in range(indice1,indice2+1)]
-            tck = interpolate.InterpolatedUnivariateSpline(rango_x, rango_flux, k = 5)
-            xnew_rango = []
-            for p in range(len(xnew)):
-                if (x_1 <= xnew[p] <= x_2) == True:
-                    xnew_rango.append(xnew[p])
-            indice1_rango = int(np.where(xnew == xnew_rango[0])[0])
-            indice2_rango = int(np.where(xnew == xnew_rango[-1])[0])
-            ynew_rango = interpolate.UnivariateSpline.__call__(tck, xnew_rango)
-            for p in range(indice1_rango, indice2_rango+1):
-                ynew[p] = ynew_rango[p - indice1_rango]
-
-            del x_1, x_2, indice1, indice2, rango_x, rango_flux, tck,\
-                xnew_rango, indice1_rango, indice2_rango, ynew_rango
-
-        #-----------------------------------------------
-
-
-        # Creates the fits file with the 1D spectra
-        # including in the the header the
-        # CRVAL1, CDELT1 and CRPIX1 cards
-        # Also, creates the 'starname_full_res.fits'
-        # file, which is a copy of the
-        # 'starname_full.fits' file, but will be use
-        # to edit with restframe correction.
-        #-----------------------------------------------
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu_new = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu_new[0].header
-        data = hdu_new[0].data
-
-        header_new['CRPIX1'] = (1.,'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x,'Coordinate increment par pixel')
-        hdu_new.flush()
-        hdu_new.close()
-
-        del arr, arr_sort, x_sort, flux_sort, deltas,\
-            deltas2, mean1, mean2, delta_x, Nnew, xnew, ynew,\
-            x_flux0, cero_flux, non_cero_flux
-
-    del files, x, flux, x1, x2
-    #-----------------------------------------------
-
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-    ##############################################
-    # Checks the number of lines present in the spectra
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        ab = abundances
-        plot_lines(x, data, starname, abundances = ab)
-
-        del x, data, ab
-
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
         return snr
-
-    else:
-        snr[0][2] = 0.0
-        snr[1][2] = 0.0
-
-        return snr
+    return 0.0
 
 
 #*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
 
 
-def hires(starname, abundances = False):
+def hires(starname, do_restframe=True, new_res=False, make_1d=False):
+
     """
     Combines the values for the tables of each ccd
-    to create a 1D image. It then corrects the spectra
-    to restframe, which will be the image to
-    be used by ARES.
+    to create a 1D image.
     """
 
-    ###############################################
-    # Checks if the 1D image has been created.
-    ###############################################
+    snr = None
+    header0 = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
 
-    if os.path.isfile(starname + '.fits'):
-        print '\t\tImage ' + starname + '.fits has already been created.'
-        print '\t\tSkipping the next step.\n'
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
 
-    else:
-        path = starname + '/HIRES/extracted/tbl'
-        folders = glob.glob(path + '/*')
-        folders = sorted(folders)
+    path = '%s/HIRES/extracted/tbl' % starname
+    folders = glob.glob(path + '/*')
+    folders = sorted(folders)
 
-        ###############################################
-        # Looks for the .tbl files in each ccd, and saves
-        # the names in files.
-        ###############################################
+    # Looks for the .tbl files in each ccd, and saves
+    # the names in files.
 
-        files = []
-        borders_ccds = []
-        j = 0
-        for i in range(len(folders)):
-            path1 = folders[i] + '/flux'
-            files1 = glob.glob(path1 + '/' + '*.tbl')
-            if len(files1) == 0:
-                files1_un = glob.glob(path1 + '/' + '*.gz')
-                if len(files1_un) == 0:
-                    print '\t\tNo tables files in ccd' + folders[i][len(folders[i]) - 1]
-                else:
-                    for f in files1_un:
-                        subprocess.call(['gunzip', f])
-                    files1 = glob.glob(path1 + '/' + '*.tbl')
-                del files1_un
-            files1 = sorted(files1)
-            for f in files1:
-                files.append(f)
+    files = []
+    borders_ccds = []
+    j = 0
+    for f in folders:
+        path1 = '%s/flux' % f
+        files1 = glob.glob('%s/*.tbl' % path1)
+        if not files1:
+            files1_un = glob.glob('%s/*.gz' % path1)
+            if not files1_un:
+                print('\t\tNo tables files in ccd %s' % f[-1])
+            else:
+                for f_ in files1_un:
+                    subprocess.call(['gunzip', f_])
+                files1 = glob.glob('%s/*.tbl' % path1)
+            del files1_un
+        files1 = sorted(files1)
+        for f_ in files1:
+            files.append(f_)
 
-            borders_ccds.append([j, j + len(files1) - 1])
-            j += len(files1)
+        borders_ccds.append([j, j + len(files1) - 1])
+        j += len(files1)
 
-            del files1
+        del files1
 
-        ###############################################
-        # Open each .tbl file, and saves the interpolation
-        # of the flux and s/n for each range of wavelength.
-        # It also saves the ranges of wavelength and the
-        # delta between them.
-        ###############################################
+    # Open each .tbl file, and saves the interpolation
+    # of the flux and s/n for each range of wavelength.
+    # It also saves the ranges of wavelength and the
+    # delta between them.
 
-        j = 0
+    tcks_flux = [] # Interpolation params for the flux
+    tcks_sn = [] # Interpolation params for the S/N
+    rangos_w = [] # Ranges of wavelength
+    deltas = [] # Difference between two wavelengths
 
-        tcks_flux = [] # Interpolation params for the flux
-        tcks_sn = [] # Interpolation params for the S/N
-        rangos_w = [] # Ranges of wavelength
-        deltas = [] # Difference between two wavelengths
+    rangos_ccds = []
+    valores_x = []
+    valores_flux = []
+    valores_sn = []
 
+    if not files:
+        print('\t\tNo .tbl files for this star.')
 
-        rangos_ccds = []
-
-        valores_x = np.array([])
-        valores_flux = np.array([])
-
-        if len(files) == 0:
-            print '\t\tNo .tbl files for this star.'
-
-        for archivo in files:
-            j += 1
-            tabla = np.genfromtxt(archivo, dtype = None, skip_header = 1,\
-                                  usecols = (4, 5, 8), names = ('wave', 'flux', 'sn'))
-            x = tabla['wave']
-            flux = tabla['flux']
-            sn = tabla['sn']
-
-            valores_x = np.hstack([valores_x, x])
-            valores_flux = np.hstack([valores_flux, flux])
-
-            # Creates the interpolation parameters and saves them
-            # in tcks_flux and tcks_sn
-
-            if np.all(x == -1.) == False:
+    for j, archivo in enumerate(files):
+        tabla = np.genfromtxt(archivo, dtype=None, skip_header=1,\
+                              usecols=(4, 5, 8), names=('wave', 'flux', 'sn'))
+        x = tabla['wave']
+        flux = tabla['flux']
+        sn = tabla['sn']
 
 
-                tck_flux = interpolate.InterpolatedUnivariateSpline(x, flux, k = 5)
-                tck_sn = interpolate.InterpolatedUnivariateSpline(x, sn, k = 5)
+        valores_x.append(x)
+        valores_flux.append(flux)
+        valores_sn.append(sn)
 
-                tcks_flux.append(tck_flux)
-                tcks_sn.append(tck_sn)
-                rangos_w.append([x[0], x[-1]])
+        # Creates the interpolation parameters and saves them
+        # in tcks_flux and tcks_sn
 
-                d = np.array([x[i + 1] - x[i] for i in range(len(x) - 1)])
-                deltas.append(np.mean(d))
-                if np.mean(d) == 0.:
-                    print '\t\tWave values are the same for every row.'
-                    break
+        if ~np.all(x == -1.):
+            tck_flux = interpolate.InterpolatedUnivariateSpline(x, flux, k=5)
+            tck_sn = interpolate.InterpolatedUnivariateSpline(x, sn, k=5)
 
+            tcks_flux.append(tck_flux)
+            tcks_sn.append(tck_sn)
+            rangos_w.append([x[0], x[-1]])
 
-                for p in range(len(borders_ccds)):
-                    if (j - 1) == borders_ccds[p][0]:
-                        rangos_ccds.append(x[0])
-                    if (j - 1) == borders_ccds[p][1]:
-                        rangos_ccds.append(x[-1])
+            d = x[1:]-x[:-1]
+            deltas.append(np.mean(d))
+            if np.mean(d) == 0.:
+                print('\t\tWave values are the same for every row.')
+                break
 
-                del tck_flux, tck_sn, d
+            for border in borders_ccds:
+                if j == border[0]:
+                    rangos_ccds.append(x[0])
+                if j == border[1]:
+                    rangos_ccds.append(x[-1])
 
+            del tck_flux, tck_sn, d
 
-            del x, flux, sn, tabla
+        del x, flux, sn, tabla
 
-        ###############################################
-        # Do not create the image if the wavelength
-        # values are wrong.
-        ###############################################
-        deltas = np.array(deltas)
-        if (np.mean(deltas) == 0.) or (len(files) == 0) or (len(deltas) == 0):
-            snr = 0.
-            print '\t\tWas not able to generate the fits file.'
-
-            del borders_ccds, tcks_flux, tcks_sn, rangos_w, deltas,\
-                rangos_ccds, valores_x, valores_flux, folders, files
-
-            return snr
-
-        ###############################################
-        # If the wavelength values are correct,
-        # continue with creating the image.
-        ###############################################
-
-        else:
-            ccds = [[rangos_ccds[i], rangos_ccds[i + 1]] for i in range(len(rangos_ccds)) if i % 2 == 0]
-
-            ###############################################
-            # Set the delta, xmin, xmax and number of points
-            # the new image will have
-            ###############################################
-
-            delta_x = np.mean(deltas)
-            xmin = rangos_w[0][0]
-            xmax = rangos_w[-1][1]
-            Nnew = abs(xmin - xmax)/delta_x
-            if round(Nnew) < Nnew: Nnew = Nnew + 1
-            Nnew = int(Nnew)
-
-            xnew = np.linspace(xmin, xmax, Nnew)
-            ynew = np.zeros(len(xnew))
-            snr = np.array([[0.,0.] for i in range(len(xnew))])
-
-            ###############################################
-            # For each wavelength that corresponds to more than
-            # one order, choose the values that have a
-            # higher S/N.
-            ###############################################
-
-            for i in range(len(xnew)):
-                for p in range(len(deltas)):
-                    # x can be in any order but the final one
-                    if p < (len(deltas) - 1):
-                        xmin_p0 = rangos_w[p][0]
-                        xmax_p0 = rangos_w[p][1]
-                        xmin_p1 = rangos_w[p + 1][0]
-                        xmax_p1 = rangos_w[p + 1][1]
-
-                        # x is in only in one order.
-                        if (xmin_p0 <= xnew[i] < xmax_p0) == True and (xmin_p1 <= xnew[i] < xmax_p1) == False:
-                            tck = tcks_flux[p]
-                            ynew[i] = interpolate.UnivariateSpline.__call__(tck, xnew[i])
-                            tck_sn1 = tcks_sn[p]
-                            snr[i][1] = interpolate.UnivariateSpline.__call__(tck_sn1, xnew[i])
-                            snr[i][0] = xnew[i]
-                            break
-                        # x is in more than one order
-                        if (xmin_p0 <= xnew[i] < xmax_p0) == True and (xmin_p1 <= xnew[i] < xmax_p1) == True:
-                            tck_sn1 = tcks_sn[p]
-                            tck_sn2 = tcks_sn[p + 1]
-
-                            sn1 = interpolate.UnivariateSpline.__call__(tck_sn1, xnew[i])
-                            sn2 = interpolate.UnivariateSpline.__call__(tck_sn2, xnew[i])
-
-                            if sn1 >= sn2:
-                                tck = tcks_flux[p]
-                                ynew[i] = interpolate.UnivariateSpline.__call__(tck, xnew[i])
-                                snr[i][1] = sn1
-                                snr[i][0] = xnew[i]
-                            else:
-                                tck = tcks_flux[p + 1]
-                                ynew[i] = interpolate.UnivariateSpline.__call__(tck, xnew[i])
-                                snr[i][1] = sn2
-                                snr[i][0] = xnew[i]
-                            break
-                    # x is in the last order only
-                    else:
-                        if (rangos_w[p][0] <= xnew[i] <= rangos_w[p][1]) == True and (rangos_w[p - 1][0] <= xnew[i] < rangos_w[p - 1][1]) == False:
-                            tck = tcks_flux[p]
-                            ynew[i] = interpolate.UnivariateSpline.__call__(tck, xnew[i])
-                            tck_sn1 = tcks_sn[p]
-                            snr[i][1] = interpolate.UnivariateSpline.__call__(tck_sn1, xnew[i])
-                            snr[i][0] = xnew[i]
-
-            del borders_ccds, tcks_flux, tcks_sn, rangos_w, deltas,\
-                rangos_ccds, valores_x, valores_flux, folders, files
-
-            ###############################################
-            # Creates the fits file with the 1D spectra
-            ###############################################
-
-            pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-            hdu = pyfits.open(starname + '.fits', mode = 'update')
-            header_new = hdu[0].header
-
-            header_new['CRPIX1'] = (1., 'Reference pixel')
-            header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-            header_new['CDELT1'] = (delta_x, 'Coordinate increment par pixel')
-
-            hdu.flush()
-            hdu.close()
-
-            del xnew, ynew, snr
-
-
-    ###############################################
-    # Correct to restframe using a ccf between the
-    # spectra and a binary mask.
-    ###############################################
-
-    # Check that the .fits image was created
-
-    if os.path.isfile(starname + '.fits') == False:
-        print '\t\t' + starname + '.fits has not yet been created.'
-        print '\t\tThere must have been a problem when creating the image.'
-        print '\t\tPlease check the tables files for ' + starname + '\n'
+    # Do not create the image if the wavelength
+    # values are wrong.
+    deltas = np.array(deltas)
+    if (np.mean(deltas) == 0.) or (not files) or deltas.size == 0:
         snr = 0.
+        print('\t\tNo valid wavelength range. Skipping this image.')
+
+        del borders_ccds, tcks_flux, tcks_sn, rangos_w, deltas,\
+            rangos_ccds, valores_x, valores_flux, folders, files
+
         return snr
 
-    else:
-        if os.path.isfile(starname + '_res.fits'):
-            print '\t\tThere is already a file named ' + starname + '_res.fits'
-        else:
-            restframe(starname + '.fits')
+    # If the wavelength values are correct,
+    # continue with creating the image.
 
-        ###############################################
-        # Checks the number of lines present in the spectra
-        ###############################################
+    # Set the delta, xmin, xmax and number of points
+    # the new image will have
 
-        if os.path.isfile(starname + '_res.fits'):
+    delta_x = np.mean(deltas)
+    xmin = rangos_w[0][0]
+    xmax = rangos_w[-1][1]
+    Nnew = (xmax - xmin)/ delta_x
+    Nnew = int(Nnew) if round(Nnew) >= Nnew else int(Nnew+1)
 
-            x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
+    xnew = np.linspace(xmin, xmax, Nnew)
+    ynew = np.zeros(len(xnew))
+    snr = np.zeros((xnew.size, 2))
 
-            ab = abundances
-            plot_lines(x, data, starname, abundances = ab)
+    # For each wavelength that corresponds to more than
+    # one order, choose the values that have a
+    # higher S/N.
 
-            range1 = '5302.94,5306.69'
-            range2 = '5546.95,5553.64'
-            range3 = '5721.31,5726.53'
+    for i, _ in enumerate(xnew):
+        for p, _ in enumerate(deltas):
+            # x can be in any order but the final one
+            if p < (len(deltas) - 1):
+                xmin_p0 = rangos_w[p][0]
+                xmax_p0 = rangos_w[p][1]
+                xmin_p1 = rangos_w[p + 1][0]
+                xmax_p1 = rangos_w[p + 1][1]
 
-            snr = []
-            indice1 = range1.index(',')
-            snr.append(float(range1[:indice1]))
-            snr.append(float(range1[indice1 + 1:]))
+                # x is in only in one order.
+                if (xmin_p0 <= xnew[i] < xmax_p0) and ~(xmin_p1 <= xnew[i] < xmax_p1):
+                    ynew[i] = tcks_flux[p](xnew[i])
+                    snr[i][1] = tcks_sn[p](xnew[i])
+                    snr[i][0] = xnew[i]
+                    break
+                # x is in more than one order
+                if (xmin_p0 <= xnew[i] < xmax_p0) and (xmin_p1 <= xnew[i] < xmax_p1):
+                    sn1 = tcks_sn[p](xnew[i])
+                    sn2 = tcks_sn[p+1](xnew[i])
 
-            indice2 = range2.index(',')
-            snr.append(float(range2[:indice2]))
-            snr.append(float(range2[indice2 + 1:]))
+                    if sn1 >= sn2:
+                        ynew[i] = tcks_flux[p](xnew[i])
+                        snr[i][1] = sn1
+                        snr[i][0] = xnew[i]
+                    else:
+                        ynew[i] = tcks_flux[p+1](xnew[i])
+                        snr[i][1] = sn2
+                        snr[i][0] = xnew[i]
+                    break
+            # x is in the last order only
+            else:
+                if (rangos_w[p][0] <= xnew[i] <= rangos_w[p][1]) and\
+                    ~(rangos_w[p - 1][0] <= xnew[i] < rangos_w[p - 1][1]):
+                    ynew[i] = tcks_flux[p](xnew[i])
+                    snr[i][1] = tcks_sn[p](xnew[i])
+                    snr[i][0] = xnew[i]
 
-            indice3 = range3.index(',')
-            snr.append(float(range3[:indice3]))
-            snr.append(float(range3[indice3 + 1:]))
+    del borders_ccds, tcks_flux, tcks_sn, rangos_w, deltas,\
+        rangos_ccds, folders, files
 
-            del x, data, ab, range1, range2, range3, \
-                indice1, indice2, indice3
+    wave = np.copy(valores_x)
+    flux = np.copy(valores_flux)
 
-            return snr
+    snr = np.array([np.median(sno[np.where(sno > 0.0)[0]]) for sno in valores_sn])
 
-        else:
+    wave_1d = xnew[:]
+    flux_1d = ynew[:]
 
-            return 0.0
+    del valores_x, valores_flux, valores_sn, xnew, ynew
+
+    fits.writeto('%s.fits' % starname, data=np.vstack((wave, flux)), overwrite=True)
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
+
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+        return snr
+    return 0.0
 
 
 #*****************************************************************************
+
+def spectra_sav(starname, do_restframe=True, new_res=False, make_1d=False):
+
+    snr = None
+    header0 = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
+
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
+
+    data = readsav('%s.sav' % starname)
+    wave = data.w
+    flux = data.star
+
+    wave_1d, flux_1d = combine_orders(wave, flux)
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0, data
+
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+        return snr
+    return 0.0
+
+
 #*****************************************************************************
-#*****************************************************************************
 
 
-def spectra_sav(starname, abundances = False):
+def pfs(starname, do_restframe=True, new_res=False, make_1d=False):
 
-    if os.path.isfile(starname + '.fits') == False:
+    snr = None
+    header0 = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
 
-        data = readsav(starname + '.sav')
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
 
+    if ~os.path.isfile('%s.fits' % starname):
+
+        data = readsav('%s.sav' % starname)
         wave = data.w
         flux = data.star
 
-        rangos_w = []
-        tcks = []
-        deltas = []
-        rangos = []
+        wave_1d, flux_1d = combine_orders(wave, flux)
+        del data
 
-
-        for i in range(len(wave)):
-            x = wave[i]
-            y = flux[i]
-
-            rangos_w.append([x[0], x[-1]])
-            dif = np.array([x[i+1]-x[i] for i in range(len(x)-1)])
-            deltas.append(np.mean(dif))
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x, y, k = 5)
-            tcks.append(tck_flux)
-
-            rangos.append(x[0])
-            rangos.append(x[-1])
-
-            del x, y, dif, tck_flux
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-            del indices, xmin_p0, xmax_p0, tck
-
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-        hdu.flush()
-        hdu.close()
-
-        del data, wave, flux, rangos_w, tcks, deltas, rangos,\
-            xnew, ynew, delta_x, xmin, xmax, Nnew, hdu, header_new
-
-
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
     else:
-        restframe(starname + '.fits')
+        wave, flux = pyasl.read1dFitsSpec('%s.fits' % starname)
 
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0
 
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        snr = compute_snr(x, data)
-
-        ab = abundances
-
-        plot_lines(x, data, starname, abundances = ab)
-
-        del x, data, ab
-
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
         return snr
-
-    else:
-        return 0.0
-
+    return 0.0
 
 
 #*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
 
 
-def pfs(starname, abundances = False):
+def coralie(starname, do_restframe=True, new_res=False, make_1d=False):
 
-    if os.path.isfile(starname + '.fits') == False:
+    snr = None
+    header0 = None
+    wave, flux, wave_1d, flux_1d = None, None, None, None
 
-        data = readsav(starname + '.sav')
+    if os.path.isfile('%s_res.fits' % starname) and not new_res:
+        print('\t\tThere is already a file named %s_res.fits' % starname)
+        return 100.0
 
-        wave = data.w
-        flux = data.star
-
-        rangos_w = []
-        tcks = []
-        deltas = []
-        rangos = []
-
-
-        for i in range(len(wave)):
-            x = wave[i]
-            y = flux[i]
-
-            rangos_w.append([x[0], x[-1]])
-            dif = np.array([x[i+1]-x[i] for i in range(len(x)-1)])
-            deltas.append(np.mean(dif))
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x, y, k = 5)
-            tcks.append(tck_flux)
-
-            rangos.append(x[0])
-            rangos.append(x[-1])
-
-            del x, y, dif, tck_flux
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-            del indices, xmin_p0, xmax_p0, tck
-
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-
-        hdu.flush()
-        hdu.close()
-
-        del data, wave, flux, rangos_w, tcks, deltas, rangos,\
-            xnew, ynew, delta_x, xmin, xmax, Nnew, hdu, header_new
-
-
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-
-        snr = compute_snr(x, data)
-
-        ab = abundances
-
-        plot_lines(x, data, starname, abundances = ab)
-
-        del x, data, ab
-
-        return snr
-
-    else:
-        return 0.0
-
-
-
-#*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
-
-
-def coralie(starname, abundances = False):
-
-    hdulist = pyfits.open(starname + '.fits')
-
+    hdulist = fits.open('%s.fits' % starname)
     header0 = hdulist[0].header
 
-    is_raw_image = True
-    if 'COMMENT' in header0.keys():
-        if header0['COMMENT'] == 'Image created after combining orders':
-            is_raw_image = False
-
-
-    if (is_raw_image == True) and (header0['NAXIS'] != 1):
-
+    if header0['NAXIS'] != 1:
         if header0['NAXIS'] == 3:
-            if (header0['NAXIS3'] == 2):
-                data = hdulist[0].data
-                wave = data[0]
-                flux = data[1]
-
-            else:
-                data = hdulist[0].data
-                wave = data[0]
-                flux = data[3]
-
-        else:
-
             data = hdulist[0].data
             wave = data[0]
-            flux = data[3]
+            if header0['NAXIS3'] == 2:
+                flux = data[1]
+            else:
+                flux = data[5]
 
-        hdulist.close()
-
-        rangos_w = []
-        tcks = []
-        deltas = []
-        rangos = []
-
-        for i in range(len(wave))[::-1]:
-            x = wave[i]
-            y = flux[i]
-
-            rangos_w.append([x[0], x[-1]])
-            dif = np.array([x[i+1]-x[i] for i in range(len(x)-1)])
-            deltas.append(np.mean(dif))
-            tck_flux = interpolate.InterpolatedUnivariateSpline(x, y, k = 5)
-            tcks.append(tck_flux)
-
-            rangos.append(x[0])
-            rangos.append(x[-1])
-
-        delta_x = max(deltas)
-        xmin = min(rangos)
-        xmax = max(rangos)
-        Nnew = abs(xmin - xmax)/delta_x
-        if round(Nnew) < Nnew: Nnew = Nnew + 1
-        Nnew = int(Nnew)
-
-        xnew = np.linspace(xmin, xmax, Nnew)
-        ynew = np.zeros(len(xnew))
-
-        for p in range(len(deltas)):
-            xmin_p0 = rangos_w[p][0]
-            xmax_p0 = rangos_w[p][1]
-
-            indices = np.where((xnew >= xmin_p0) & (xnew < xmax_p0))[0]
-            tck = tcks[p]
-            ynew[indices] = tck.__call__(xnew[indices])
-
-        del data, wave, flux, header0, rangos_w, tcks, deltas, rangos
-
-        # Creates the fits file with the 1D spectra
-        #------------------------------------------
-
-        os.system('cp ' + starname + '.fits ' + starname + '_original.fits')
-        os.system('rm -f ' + starname + '.fits')
-
-        pyfits.writeto(starname + '.fits', data = ynew, clobber = True)
-
-        hdu = pyfits.open(starname + '.fits', mode = 'update')
-        header_new = hdu[0].header
-
-        header_new['CRPIX1'] = (1., 'Reference pixel')
-        header_new['CRVAL1'] = (xnew[0], 'Coordinate at reference pixel')
-        header_new['CDELT1'] = (delta_x, 'Coordinate increment per pixel')
-        header_new.add_comment('Image created after combining orders')
-
-        hdu.flush()
-        hdu.close()
-
-        del xnew, ynew
-
-    else:
-        hdulist.close()
-        del header0
-
-    ##############################################
-    # Correct to restframe
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-        print '\t\tThere is already a file named ' + starname + '_res.fits'
-    else:
-        restframe(starname + '.fits')
-
-    ##############################################
-    # Computes the S/N
-    ##############################################
-
-    if os.path.isfile(starname + '_res.fits'):
-
-        ##############################################
-        # Plots the lines
-        ##############################################
-
-        x, data = pyasl.read1dFitsSpec(starname + '_res.fits')
-        ab = abundances
-
-        plot_lines(x, data, starname, abundances = ab)
-        snr = compute_snr(x, data)
-
-        del x, data, ab
-
-        return snr
-
-    else:
-        return 0.0
-
-
-#*****************************************************************************
-#*****************************************************************************
-#*****************************************************************************
-
-
-def plot_lines(x, data, nombre, hold_plot = False, abundances = False, save_fig = True):
-    if abundances == True:
-        archivo = 'lines_ab.dat'
-    else:
-        archivo = 'linelist.dat'
-    lines = np.genfromtxt('./Spectra/' + archivo, dtype = None, usecols = (0), skip_header = 2)
-
-    fig, ax = plt.subplots()
-    ax.plot(x, data)
-
-    for l in lines:
-        ax.axvline(x = l, color = 'red', linestyle = '--')
-
-    ax.axvline(x = 6562.81, color = 'green', linestyle = '--')
-    ax.axvline(x = (3933.664 + 0.545), color = 'green', linestyle = '--')
-    ax.axvline(x = (3933.664 - 0.545), color = 'green', linestyle = '--')
-    ax.axvline(x = (3968.470 + 0.545), color = 'green', linestyle = '--')
-    ax.axvline(x = (3968.470 - 0.545), color = 'green', linestyle = '--')
-
-    axins = inset_axes(ax, width = "25%", height = "25%", loc = 2)
-    i_range  = np.where((x > 6550.) & (x < 6575.))[0]
-    x_range = x[i_range]
-    data_range = data[i_range]
-
-    axins.plot(x_range, data_range)
-    axins.axvline(x = 6562.81, color = 'green')
-    plt.setp(axins.get_xticklabels(), visible = False)
-    plt.setp(axins.get_yticklabels(), visible = False)
-
-    plt.draw()
-
-    if save_fig == True:
-        if not os.path.exists('./EW/plots_spectra'):
-            os.makedirs('./EW/plots_spectra')
-        repeats = collections.Counter(nombre)['/']
-        for p in range(repeats):
-            indice = nombre.index('/')
-            new_name = nombre[indice + 1:]
-            nombre = new_name
-        if abundances == False:
-            fig.savefig('./EW/plots_spectra/' + nombre + '.pdf')
         else:
-            fig.savefig('./EW/plots_spectra/' + nombre + '_ab.pdf')
+            data = hdulist[0].data
+            wave = data[0]
+            try:
+                flux = data[3]
+            except IndexError:
+                flux = data[1]
 
+        hdulist.close()
 
-    if hold_plot == True:
-        press = raw_input('\t\tpress enter to continue')
+        if len(wave.shape) > 1:
+            rangos_w = []
+            tcks = []
+            deltas = []
+            rangos = []
 
-    plt.close('all')
+            for i in range(len(wave))[::-1]:
+                x = wave[i]
+                y = flux[i]
 
-    del lines, fig, ax, axins, i_range, x_range, data_range
+                rangos_w.append([x[0], x[-1]])
+                deltas.append(np.mean(x[1:]-x[:-1]))
+                tck_flux = interpolate.InterpolatedUnivariateSpline(x, y, k=5)
+                tcks.append(tck_flux)
+
+                rangos.append(x[0])
+                rangos.append(x[-1])
+
+            delta_x = max(deltas)
+            xmin = min(rangos)
+            xmax = max(rangos)
+            Nnew = old_div(abs(xmin - xmax), delta_x)
+            Nnew = int(Nnew) if round(Nnew) >= Nnew else int(Nnew+1)
+
+            xnew, ynew = create_new_wave_flux(xmin, xmax, Nnew, rangos_w, deltas, tcks)
+            del rangos_w, tcks, deltas, rangos
+
+        else:
+            xnew = wave[:]
+            ynew = flux[:]
+
+        wave_1d = xnew[:]
+        flux_1d = ynew[:]
+
+        del data, xnew, ynew
+
+    else:
+        wave, flux = pyasl.read1dFitsSpec('%s.fits' % starname)
+        hdulist.close()
+
+    snr = restframe(starname, wave, flux, wave_1d, flux_1d, header0, snr, do_restframe=do_restframe,\
+                    make_1d=make_1d)
+    del wave, flux, wave_1d, flux_1d, header0, hdulist
+
+    if os.path.isfile('%s_res.fits' % starname) and (snr is not None):
+        return snr
+    return 0.0
