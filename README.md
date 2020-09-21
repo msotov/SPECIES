@@ -23,3 +23,17 @@ More detail about the method and results from SPECIES can be found in Soto & Jen
 SPECIES is written mostly in Python, with the exception of MOOG, written in fortran. Installation instructions for MOOG, as well as required packages, are found in the [WiKi](https://github.com/msotov/SPECIES/wiki/Installation) page. Please refer to the [Wiki](https://github.com/msotov/SPECIES/wiki) for usage instructions as well. 
 
 Please contact me if you have any questions or issues when running SPECIES!
+
+# Some of the plots created by SPECIES
+
+Fit to the iron lines for the equivalent width estimation
+![EW fit](https://github.com/msotov/images/blob/master/EW.png)
+
+Correlation between the iron abundance and the line excitation potential and reduced equivalent width, for the estimation of the atmospheric parameters
+![moog output](https://github.com/msotov/images/blob/master/moog_output.png)
+
+HR diagram of the Sun
+![isochrone](https://github.com/msotov/images/blob/master/HRdiagram.png)
+
+Rotational velocity estimation
+![vsini](https://github.com/msotov/images/blob/master/vsini.png)
