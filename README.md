@@ -12,7 +12,7 @@ Authors: Maritza Soto and James Jenkins.
 
 The atmospheric parameters (temperature, metallicity, surface gravity and microturbulence velocity) are computed by measuring the equivalent widths of several iron lines, done using ARES (Sousa et al. 2008). These are then given to MOOG (Sneden 1973), which solves the radiative transfer equation assuming local thermodynamic equilibrium (LTE) conditions. The atmospheric parameters are then derived through an iterative process that stops when no correlation is found between the line abundances with the excitation potential and the equivalent width. The atmospheric models are obtained from interpolation through a grid of ATLAS9 models (Castelli & Kurucz 2004).
 
-Chemical abundances are obtained for 11 elements: Na, Mg, Al, Si, Ca, Ti, Cr, Mn, Ni, Cu and Zn. These elements are the default ones included in our `Spectra/lines_ab.dat` linelist file, but that file can be modified or another linelist file can be use (please refer to the wiki --> Running SPECIES). Rotational and macroturbulence velocity are found by temperature relations, and line fitting, measuring the profiles of five absorption lines.
+Chemical abundances are obtained for 11 elements: Na, Mg, Al, Si, Ca, Ti, Cr, Mn, Ni, Cu and Zn. These elements are the default ones included in our `Spectra/lines_ab.dat` linelist file, but that file can be modified or another linelist file can be use (please refer to the [wiki --> Running SPECIES](https://github.com/msotov/SPECIES/wiki/Running-SPECIES)). Rotational and macroturbulence velocity are found by temperature relations, and line fitting, measuring the profiles of five absorption lines.
 
 Finally, physical parameters like mass and age are computed by interpolating throught a grid of MIST evolutionary models, using the metallicity, temperature and surface gravity found previously, as well as their uncertainties, as constrains to the likelihood function. It uses a bayesian approach to obtain the final values, which are taken as the mean and standard deviation of the Gaussian profile adjusted to the resulting chains.
 
@@ -20,6 +20,6 @@ More detail about the method and results from SPECIES can be found in Soto & Jen
 
 # Installation and use
 
-SPECIES is written mostly in Python, with the exception of MOOG, written in fortran. Installation instructions for MOOG, as well as required packages, are found in the Wiki page. Please refer to the Wiki for usage instructions as well. 
+SPECIES is written mostly in Python, with the exception of MOOG, written in fortran. Installation instructions for MOOG, as well as required packages, are found in the [WiKi](https://github.com/msotov/SPECIES/wiki/Installation) page. Please refer to the [Wiki](https://github.com/msotov/SPECIES/wiki) for usage instructions as well. 
 
 Please contact me if you have any questions or issues when running SPECIES!
